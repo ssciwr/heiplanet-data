@@ -1,11 +1,11 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
 name = "heiplanet-data"
 license = "MIT"
-dynamic = ["version"]
+version = "0.0.1"
 readme = "README.md"
 description = "Data processing pipeline for heiplanet"
 requires-python = ">=3.11"
@@ -60,7 +60,3 @@ include-package-data = true
 include = [
   "heiplanet_data/*.json"
 ]
-
-[tool.hatch.version]
-source = "vcs"
-tag-pattern = "v(?P<version>.+)"
