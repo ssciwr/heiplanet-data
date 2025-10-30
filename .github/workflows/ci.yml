@@ -36,8 +36,7 @@ jobs:
 
     - name: Install dependencies (with conda, for xesmf)
       run: |
-        conda install -y \
-          esmpy
+        conda install -c conda-forge esmpy
 
     - name: Install dependencies and package
       run: |
