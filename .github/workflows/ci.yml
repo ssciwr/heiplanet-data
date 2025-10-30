@@ -43,7 +43,7 @@ jobs:
 
     - name: Install dependencies and package
       run: |
-        python -m pip install --upgrade pip
+        pip install --upgrade pip
         pip install uv
         uv pip install --system -e .[dev]
 
@@ -54,7 +54,7 @@ jobs:
 
     - name: Execute PyTest
       run: |
-        python -m pytest -svv --cov=heiplanet_data --cov-report=xml:heiplanet_data/coverage_re/coverage.xml
+        pytest -svv --cov=heiplanet_data --cov-report=xml:heiplanet_data/coverage_re/coverage.xml
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v5
       with:
