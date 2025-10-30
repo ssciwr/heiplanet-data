@@ -25,17 +25,6 @@ jobs:
     - name: Getting repository
       uses: actions/checkout@v4
 
-    - name: Install dependencies and package
-      run: |
-        python -m pip install --upgrade pip
-        pip install uv
-        uv pip install --system -e .[dev]
-
-    - name: Create .cdsapirc file
-      run: |
-        echo "url: https://cds.climate.copernicus.eu/api" >> ~/.cdsapirc
-        echo "key: ${{ secrets.CDSAPI_KEY }}" >> ~/.cdsapirc
-
     - name: Set up Miniconda
       uses: conda-incubator/setup-miniconda@v3
       with:
@@ -49,6 +38,17 @@ jobs:
       run: |
         conda install -y \
           esmpy
+
+    - name: Install dependencies and package
+      run: |
+        python -m pip install --upgrade pip
+        pip install uv
+        uv pip install --system -e .[dev]
+
+    - name: Create .cdsapirc file
+      run: |
+        echo "url: https://cds.climate.copernicus.eu/api" >> ~/.cdsapirc
+        echo "key: ${{ secrets.CDSAPI_KEY }}" >> ~/.cdsapirc
 
     - name: Execute PyTest
       run: |
