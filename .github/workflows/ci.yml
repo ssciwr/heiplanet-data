@@ -39,6 +39,7 @@ jobs:
         source ~/.bashrc
         conda activate test_env
         conda install -y -c conda-forge esmf esmpy
+      shell: bash -l {0}
 
     - name: Install dependencies and package
       run: |
