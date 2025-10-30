@@ -7,6 +7,7 @@ from heiplanet_data import utils
 import geopandas as gpd
 import pandas as pd
 import re
+import xesmf as xe
 
 
 T = TypeVar("T", bound=Union[np.float64, xr.DataArray])
@@ -223,6 +224,53 @@ def convert_m_to_mm_with_attributes(
     return dataset
 
 
+def check_downsample_condition(
+    dataset: xr.Dataset,
+    new_resolution: float,
+    lat_name: str = "latitude",
+    lon_name: str = "longitude",
+    agg_funcs: Dict[str, str] | None = None,
+) -> float:
+    """Check if downsampling conditions are met.
+
+    Args:
+        dataset (xr.Dataset): Dataset to check downsampling conditions.
+        new_resolution (float): Desired new resolution in degrees.
+        lat_name (str): Name of the latitude coordinate. Default is "latitude".
+        lon_name (str): Name of the longitude coordinate. Default is "longitude".
+        agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
+
+    Raises:
+        ValueError: If coordinate names are incorrect, new resolution is non-positive,
+            new resolution is not greater than old resolution,
+            or agg_funcs is not None and not a dictionary.
+
+    Returns:
+        float: Old resolution in degrees.
+    """
+    if lat_name not in dataset.coords or lon_name not in dataset.coords:
+        raise ValueError(
+            f"Coordinate names '{lat_name}' and '{lon_name}' are incorrect."
+        )
+    if new_resolution <= 0:
+        raise ValueError(warn_positive_resolution)
+
+    old_resolution = np.round((dataset[lon_name][1] - dataset[lon_name][0]).item(), 2)
+
+    if new_resolution <= old_resolution:
+        raise ValueError(
+            f"To downsample, degree of new resolution {new_resolution} "
+            "should be greater than {old_resolution}."
+        )
+
+    if agg_funcs is not None and not isinstance(agg_funcs, dict):
+        raise ValueError(
+            "agg_funcs must be a dictionary of variable names and aggregation functions."
+        )
+
+    return old_resolution
+
+
 def downsample_resolution(
     dataset: xr.Dataset,
     new_resolution: float = 0.5,
@@ -247,20 +295,13 @@ def downsample_resolution(
     Returns:
         xr.Dataset: Dataset with changed resolution.
     """
-    if lat_name not in dataset.coords or lon_name not in dataset.coords:
-        raise ValueError(
-            f"Coordinate names '{lat_name}' and '{lon_name}' are incorrect."
-        )
-    if new_resolution <= 0:
-        raise ValueError(warn_positive_resolution)
-
-    old_resolution = np.round((dataset[lon_name][1] - dataset[lon_name][0]).item(), 2)
-
-    if new_resolution <= old_resolution:
-        raise ValueError(
-            f"To downsample, degree of new resolution {new_resolution} "
-            "should be greater than {old_resolution}."
-        )
+    old_resolution = check_downsample_condition(
+        dataset,
+        new_resolution,
+        lat_name=lat_name,
+        lon_name=lon_name,
+        agg_funcs=agg_funcs,
+    )
 
     weight = int(np.ceil(new_resolution / old_resolution))
     dim_kwargs = {
@@ -277,10 +318,6 @@ def downsample_resolution(
         }
     if agg_funcs is None:
         agg_funcs = dict.fromkeys(dataset.data_vars, "mean")
-    elif not isinstance(agg_funcs, dict):
-        raise ValueError(
-            "agg_funcs must be a dictionary of variable names and aggregation functions."
-        )
 
     result = {}
     for var in dataset.data_vars:
@@ -348,6 +385,75 @@ def align_lon_lat_with_popu_data(
         )
 
     return dataset
+
+
+def downsample_resolution_with_xesmf(
+    dataset: xr.Dataset,
+    new_resolution: float = 0.5,
+    min_lat: float = -89.75,
+    max_lat: float = 89.75,
+    min_lon: float = -179.75,
+    max_lon: float = 179.75,
+    lat_name: str = "latitude",
+    lon_name: str = "longitude",
+    agg_funcs: Dict[str, str] | None = None,
+) -> xr.Dataset:
+    """Downsample the resolution of a dataset using xESMF.
+    Ref: https://xesmf.readthedocs.io/en/stable/notebooks/Rectilinear_grid.html
+
+    Args:
+        dataset (xr.Dataset): Dataset to change resolution.
+        new_resolution (float): New resolution in degrees. Default is 0.5.
+        min_lat (float): Minimum latitude of the new grid. Default is -89.75.
+        min_lon (float): Minimum longitude of the new grid. Default is -179.75.
+        lat_name (str): Name of the latitude coordinate. Default is "latitude".
+        lon_name (str): Name of the longitude coordinate. Default is "longitude".
+        agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
+            If None, default aggregation is used, i.e. `bilinear` for all variables.
+    """
+    _ = check_downsample_condition(
+        dataset,
+        new_resolution,
+        lat_name=lat_name,
+        lon_name=lon_name,
+    )
+
+    # prepare the new dataset
+    min_num = 0.001
+    new_lats = np.arange(max_lat, min_lat - min_num, -new_resolution)
+    new_lons = np.arange(min_lon, max_lon + min_num, new_resolution)
+    new_grid = xr.Dataset(
+        {
+            lat_name: ([lat_name], new_lats, dataset[lat_name].attrs),
+            lon_name: ([lon_name], new_lons, dataset[lon_name].attrs),
+        }
+    )
+
+    # define regridders
+    # each regridder for each function defined in agg_funcs
+    if agg_funcs is None:
+        agg_funcs = dict.fromkeys(dataset.data_vars, "bilinear")
+
+    # avoid creating duplicate regridders
+    unique_funcs = set(agg_funcs.values())
+    regridder_dict = {}
+    for func in unique_funcs:
+        regridder_dict[func] = xe.Regridder(dataset, new_grid, func)
+
+    for var in agg_funcs.keys():
+        regridder_dict[var] = regridder_dict[agg_funcs[var]]
+
+    # apply regridders to data variables
+    result = {}
+    for var in dataset.data_vars:
+        if var in regridder_dict:
+            result[var] = regridder_dict[var](dataset[var], keep_attrs=True)
+
+    # create a new dataset with the regridded variables
+    result_dataset = xr.Dataset(result)
+    result_dataset.attrs = dataset.attrs.copy()
+
+    return result_dataset
 
 
 def upsample_resolution(
