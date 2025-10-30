@@ -36,8 +36,7 @@ jobs:
 
     - name: Install dependencies (with conda, for xesmf)
       run: |
-        conda install -c conda-forge esmpy xarray numpy shapely cf_xarray sparse numba
-        pip install git+https://github.com/pangeo-data/xesmf.git
+        conda install -c conda-forge xesmf
 
     - name: Install dependencies and package
       run: |
