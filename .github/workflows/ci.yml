@@ -36,6 +36,20 @@ jobs:
         echo "url: https://cds.climate.copernicus.eu/api" >> ~/.cdsapirc
         echo "key: ${{ secrets.CDSAPI_KEY }}" >> ~/.cdsapirc
 
+    - name: Set up Miniconda
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        auto-activate-base: false
+        activate-environment: test-env
+        python-version: 3.11
+        channels: conda-forge
+        channel-priority: strict
+
+    - name: Install dependencies (with conda, for xesmf)
+      run: |
+        conda install -y \
+          esmpy
+
     - name: Execute PyTest
       run: |
         python -m pytest -svv --cov=heiplanet_data --cov-report=xml:heiplanet_data/coverage_re/coverage.xml
