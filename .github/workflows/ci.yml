@@ -30,12 +30,13 @@ jobs:
       with:
         auto-activate-base: false
         activate-environment: test-env
-        python-version: 3.13
+        python-version: ${{ matrix.python-version }}
         channels: conda-forge
         channel-priority: strict
 
     - name: Install dependencies (with conda, for xesmf)
       run: |
+        conda activate test-env
         conda install -y -c conda-forge esmf esmpy
 
     - name: Install dependencies and package
