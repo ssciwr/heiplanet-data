@@ -29,14 +29,15 @@ jobs:
       uses: conda-incubator/setup-miniconda@835234971496cad1653abb28a638a281cf32541f
       with:
         auto-activate-base: false
-        activate-environment: test-env
-        python-version: ${{ matrix.python-version }}
         channels: conda-forge
         channel-priority: strict
 
     - name: Install dependencies (with conda, for xesmf)
       run: |
-        conda activate test-env
+        conda create -n test_env python=${{ matrix.python-version }} -y
+        conda init bash
+        source ~/.bashrc
+        conda activate test_env
         conda install -y -c conda-forge esmf esmpy
 
     - name: Install dependencies and package
