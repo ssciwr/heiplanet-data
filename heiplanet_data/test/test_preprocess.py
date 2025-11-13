@@ -451,7 +451,7 @@ def test_downsample_resolution_custom(get_dataset):
     )
 
 
-def test_downsample_resolution_with_xesmf(get_dataset):
+def test_downsample_resolution_with_xesmf_custom(get_dataset):
     # modify lat lon of the original dataset
     get_dataset = get_dataset.assign_coords(
         latitude=("latitude", [0.0, 0.5]),
@@ -534,6 +534,36 @@ def test_downsample_resolution_with_xesmf(get_dataset):
     assert np.allclose(
         downsampled_dataset["tp"].values.flatten(), out_ds["tp"].values.flatten()
     )
+
+
+def test_downsample_resolution_with_xesmf_default(get_dataset):
+    get_dataset = get_dataset.assign_coords(
+        latitude=("latitude", [0.0, 0.5]),
+        longitude=("longitude", [0.0, 0.5, 1.0]),
+    )
+    # downsample resolution with xesmf
+    downsampled_dataset = preprocess.downsample_resolution_with_xesmf(
+        get_dataset,
+        new_resolution=1.0,
+        min_lat=0.0,
+        max_lat=0.5,
+        min_lon=0.0,
+        max_lon=1.0,
+        lat_name="latitude",
+        lon_name="longitude",
+        agg_funcs=None,
+    )
+
+    # bilinear check
+    t2m_old = get_dataset.t2m.values
+    t2m_new = downsampled_dataset.t2m.values
+    assert np.nanmin(t2m_new) >= np.nanmin(t2m_old) - 1e-6
+    assert np.nanmax(t2m_new) <= np.nanmax(t2m_old) + 1e-6
+
+    tp_old = get_dataset.tp.values
+    tp_new = downsampled_dataset.tp.values
+    assert np.nanmin(tp_new) >= np.nanmin(tp_old) - 1e-6
+    assert np.nanmax(tp_new) <= np.nanmax(tp_old) + 1e-6
 
 
 def test_align_lon_lat_with_popu_data_invalid(get_dataset):
