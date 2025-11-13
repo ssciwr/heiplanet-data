@@ -411,7 +411,7 @@ def downsample_resolution_with_xesmf(
         agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
             If None, default aggregation is used, i.e. `bilinear` for all variables.
     """
-    _ = check_downsample_condition(
+    old_res = check_downsample_condition(
         dataset,
         new_resolution,
         lat_name=lat_name,
@@ -434,20 +434,74 @@ def downsample_resolution_with_xesmf(
     if agg_funcs is None:
         agg_funcs = dict.fromkeys(dataset.data_vars, "bilinear")
 
+    # TODO: check this again!
+    # create grid corners for conservative regridding
+    if "conservative" in agg_funcs.values():
+        if "lat_b" not in dataset.coords or "lon_b" not in dataset.coords:
+            old_lat = dataset[lat_name].values
+            old_lon = dataset[lon_name].values
+
+            old_lat_b = np.arange(
+                max(old_lat) + old_res, min(old_lat) - old_res, -old_res
+            )
+            old_lon_b = np.arange(
+                min(old_lon) - old_res, max(old_lon) + old_res, old_res
+            )
+            dataset = dataset.assign_coords(
+                {
+                    "lat_b": (
+                        ["lat_b"],
+                        old_lat_b,
+                        dataset[lat_name].attrs,
+                    ),
+                    "lon_b": (
+                        ["lon_b"],
+                        old_lon_b,
+                        dataset[lon_name].attrs,
+                    ),
+                }
+            )
+        if "lat_b" not in new_grid.coords or "lon_b" not in new_grid.coords:
+            new_lat_b = np.arange(
+                max(new_lats) + new_resolution,
+                min(new_lats) - new_resolution,
+                -new_resolution,
+            )
+            new_lon_b = np.arange(
+                min(new_lons) - new_resolution,
+                max(new_lons) + new_resolution,
+                new_resolution,
+            )
+            new_grid = new_grid.assign_coords(
+                {
+                    "lat_b": (
+                        ["lat_b"],
+                        new_lat_b,
+                        dataset[lat_name].attrs,
+                    ),
+                    "lon_b": (
+                        ["lon_b"],
+                        new_lon_b,
+                        dataset[lon_name].attrs,
+                    ),
+                }
+            )
+
     # avoid creating duplicate regridders
     unique_funcs = set(agg_funcs.values())
     regridder_dict = {}
+    regridder_var_dict = {}
     for func in unique_funcs:
-        regridder_dict[func] = xe.Regridder(dataset, new_grid, func)
+        regridder_dict[func] = xe.Regridder(dataset, new_grid, func, periodic=True)
 
     for var in agg_funcs.keys():
-        regridder_dict[var] = regridder_dict[agg_funcs[var]]
+        regridder_var_dict[var] = regridder_dict[agg_funcs[var]]
 
     # apply regridders to data variables
     result = {}
     for var in dataset.data_vars:
-        if var in regridder_dict:
-            result[var] = regridder_dict[var](dataset[var], keep_attrs=True)
+        if var in regridder_var_dict:
+            result[var] = regridder_var_dict[var](dataset[var], keep_attrs=True)
 
     # create a new dataset with the regridded variables
     result_dataset = xr.Dataset(result)
