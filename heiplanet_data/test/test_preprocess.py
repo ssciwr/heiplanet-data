@@ -8,6 +8,7 @@ from pathlib import Path
 from conftest import get_files
 import json
 from datetime import datetime
+import xesmf as xe
 
 
 @pytest.fixture()
@@ -349,7 +350,7 @@ def test_convert_m_to_mm_with_attributes_inplace(get_dataset):
     )
 
 
-def test_downsample_resolution_invalid(get_dataset):
+def test_check_downsample_condition(get_dataset):
     with pytest.raises(ValueError):
         preprocess.downsample_resolution(get_dataset, new_resolution=0)
     with pytest.raises(ValueError):
@@ -384,7 +385,7 @@ def test_downsample_resolution_default(get_dataset):
         get_dataset, new_resolution=1.0
     )
 
-    # check if the dimensions are reduced
+    # check if the number of dimensions is kept
     assert len(downsampled_dataset["t2m"].dims) == 3
     assert len(downsampled_dataset["tp"].dims) == 3
 
@@ -414,7 +415,7 @@ def test_downsample_resolution_custom(get_dataset):
         get_dataset, new_resolution=1.0, agg_funcs=agg_funcs
     )
 
-    # check if the dimensions are reduced
+    # check if the number of dimensions is kept
     assert len(downsampled_dataset["t2m"].dims) == 3
     assert len(downsampled_dataset["tp"].dims) == 3
 
@@ -448,6 +449,121 @@ def test_downsample_resolution_custom(get_dataset):
         downsampled_dataset["tp"].values.flatten(),
         np.mean(get_dataset["tp"][:, :, :2], axis=(1, 2)),
     )
+
+
+def test_downsample_resolution_with_xesmf_custom(get_dataset):
+    # modify lat lon of the original dataset
+    get_dataset = get_dataset.assign_coords(
+        latitude=("latitude", [0.0, 0.5]),
+        longitude=("longitude", [0.0, 0.5, 1.0]),
+    )
+    # downsample resolution with xesmf
+    downsampled_dataset = preprocess.downsample_resolution_with_xesmf(
+        get_dataset,
+        new_resolution=1.0,
+        min_lat=0.0,
+        max_lat=0.5,
+        min_lon=0.0,
+        max_lon=1.0,
+        lat_name="latitude",
+        lon_name="longitude",
+        agg_funcs={"t2m": "bilinear", "tp": "conservative"},
+    )
+
+    # check if the number of dimensions is kept
+    assert len(downsampled_dataset["t2m"].dims) == 3
+    assert len(downsampled_dataset["tp"].dims) == 3
+
+    # check if the coordinates are adjusted
+    assert np.allclose(downsampled_dataset["t2m"].latitude.values, [0.5])
+    assert np.allclose(downsampled_dataset["t2m"].longitude.values, [0.0, 1.0])
+
+    # check attributes
+    assert downsampled_dataset.attrs == get_dataset.attrs
+    for var in downsampled_dataset.data_vars.keys():
+        for att in downsampled_dataset[var].attrs.keys():
+            if att != "regrid_method":
+                assert (
+                    downsampled_dataset[var].attrs[att] == get_dataset[var].attrs[att]
+                )
+
+    # manually use xesmf to downsample for comparison
+    old_lats = get_dataset["latitude"].values
+    old_lons = get_dataset["longitude"].values
+    old_lat_b = np.arange(max(old_lats) + 0.5, min(old_lats) - 0.5, -0.5)
+    old_lon_b = np.arange(min(old_lons) - 0.5, max(old_lons) + 0.5, 0.5)
+    get_dataset = get_dataset.assign_coords(
+        {
+            "lat_b": (["lat_b"], old_lat_b, get_dataset["latitude"].attrs),
+            "lon_b": (["lon_b"], old_lon_b, get_dataset["longitude"].attrs),
+        }
+    )
+
+    new_lats = np.arange(0.5, 0.0 - 0.001, -1.0)
+    new_lons = np.arange(0.0, 1.0 + 0.001, 1.0)
+    new_lat_b = np.arange(
+        max(new_lats) + 1.0,
+        min(new_lats) - 1.0,
+        -1.0,
+    )
+    new_lon_b = np.arange(
+        min(new_lons) - 1.0,
+        max(new_lons) + 1.0,
+        1.0,
+    )
+    ds_out = xr.Dataset(
+        {
+            "latitude": (["latitude"], new_lats, get_dataset["latitude"].attrs),
+            "longitude": (["longitude"], new_lons, get_dataset["longitude"].attrs),
+            "lat_b": (["lat_b"], new_lat_b, get_dataset["latitude"].attrs),
+            "lon_b": (["lon_b"], new_lon_b, get_dataset["longitude"].attrs),
+        }
+    )
+
+    regridder_t2m = xe.Regridder(get_dataset, ds_out, "bilinear", periodic=True)
+    regridder_tp = xe.Regridder(get_dataset, ds_out, "conservative")
+    result_t2m = regridder_t2m(get_dataset["t2m"], keep_attrs=True)
+    result_tp = regridder_tp(get_dataset["tp"], keep_attrs=True)
+
+    out_ds = xr.Dataset({"t2m": result_t2m, "tp": result_tp})
+
+    # check if the data is downsampled correctly
+    assert np.allclose(
+        downsampled_dataset["t2m"].values.flatten(), result_t2m.values.flatten()
+    )
+    assert np.allclose(
+        downsampled_dataset["tp"].values.flatten(), out_ds["tp"].values.flatten()
+    )
+
+
+def test_downsample_resolution_with_xesmf_default(get_dataset):
+    get_dataset = get_dataset.assign_coords(
+        latitude=("latitude", [0.0, 0.5]),
+        longitude=("longitude", [0.0, 0.5, 1.0]),
+    )
+    # downsample resolution with xesmf
+    downsampled_dataset = preprocess.downsample_resolution_with_xesmf(
+        get_dataset,
+        new_resolution=1.0,
+        min_lat=0.0,
+        max_lat=0.5,
+        min_lon=0.0,
+        max_lon=1.0,
+        lat_name="latitude",
+        lon_name="longitude",
+        agg_funcs=None,
+    )
+
+    # bilinear check
+    t2m_old = get_dataset.t2m.values
+    t2m_new = downsampled_dataset.t2m.values
+    assert np.nanmin(t2m_new) >= np.nanmin(t2m_old) - 1e-6
+    assert np.nanmax(t2m_new) <= np.nanmax(t2m_old) + 1e-6
+
+    tp_old = get_dataset.tp.values
+    tp_new = downsampled_dataset.tp.values
+    assert np.nanmin(tp_new) >= np.nanmin(tp_old) - 1e-6
+    assert np.nanmax(tp_new) <= np.nanmax(tp_old) + 1e-6
 
 
 def test_align_lon_lat_with_popu_data_invalid(get_dataset):
