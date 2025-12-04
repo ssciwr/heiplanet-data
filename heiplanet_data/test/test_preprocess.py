@@ -461,10 +461,10 @@ def test_downsample_resolution_with_xesmf_custom(get_dataset):
     downsampled_dataset = preprocess.downsample_resolution_with_xesmf(
         get_dataset,
         new_resolution=1.0,
-        min_lat=0.0,
-        max_lat=0.5,
-        min_lon=0.0,
-        max_lon=1.0,
+        new_min_lat=0.0,
+        new_max_lat=0.5,
+        new_min_lon=0.0,
+        new_max_lon=1.0,
         lat_name="latitude",
         lon_name="longitude",
         agg_funcs={"t2m": "bilinear", "tp": "conservative"},
@@ -545,10 +545,10 @@ def test_downsample_resolution_with_xesmf_default(get_dataset):
     downsampled_dataset = preprocess.downsample_resolution_with_xesmf(
         get_dataset,
         new_resolution=1.0,
-        min_lat=0.0,
-        max_lat=0.5,
-        min_lon=0.0,
-        max_lon=1.0,
+        new_min_lat=None,
+        new_max_lat=None,
+        new_min_lon=None,
+        new_max_lon=None,
         lat_name="latitude",
         lon_name="longitude",
         agg_funcs=None,
@@ -715,18 +715,37 @@ def test_resample_resolution_invalid(get_dataset):
 
 
 def test_resample_resolution_default(get_dataset):
-    # downsample resolution
-    resampled_dataset = preprocess.resample_resolution(get_dataset, new_resolution=1.0)
+    # downsample resolution with xarray
+    resampled_dataset_xarray = preprocess.resample_resolution(
+        get_dataset, new_resolution=1.0, lib="xarray"
+    )
 
     # check if the coordinates are adjusted
-    assert np.allclose(resampled_dataset["tp"].latitude.values, [0.25])
-    assert np.allclose(resampled_dataset["tp"].longitude.values, [0.25])
+    assert np.allclose(resampled_dataset_xarray["tp"].latitude.values, [0.25])
+    assert np.allclose(resampled_dataset_xarray["tp"].longitude.values, [0.25])
 
     # check aggregated values
     assert np.allclose(
-        resampled_dataset["tp"].values.flatten(),
+        resampled_dataset_xarray["tp"].values.flatten(),
         np.mean(get_dataset["tp"][:, :, :2], axis=(1, 2)),
     )
+
+    # downsample resolution with xesmf
+    resampled_dataset_xesmf = preprocess.resample_resolution(
+        get_dataset,
+        new_resolution=1.0,
+        lib="xesmf",
+        new_min_lat=0.0,
+        new_max_lat=0.5,
+        new_min_lon=0.0,
+        new_max_lon=1.0,
+    )
+    # bilinear check
+    t2m_old = get_dataset.tp.values
+    t2m_new = resampled_dataset_xesmf.tp.values
+    # bilinear check
+    assert np.nanmin(t2m_new) >= np.nanmin(t2m_old) - 1e-6
+    assert np.nanmax(t2m_new) <= np.nanmax(t2m_old) + 1e-6
 
     # upsample resolution
     resampled_dataset = preprocess.resample_resolution(get_dataset, new_resolution=0.1)
@@ -995,6 +1014,7 @@ def test_apply_preprocessing_downsample(get_dataset):
         "resample_grid_vname": ["latitude", "longitude"],
         "resample_degree": 1.0,
         "resample_grid_fname": "deg_trim",
+        "downsample_lib": "xarray",
     }
     # preprocess the data file
     preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(

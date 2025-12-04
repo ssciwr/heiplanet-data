@@ -9,3 +9,4 @@ dask[complete]
 scipy
 isimip-client
 xesmf
+cdo

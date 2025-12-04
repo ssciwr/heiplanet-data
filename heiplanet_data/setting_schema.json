@@ -75,6 +75,28 @@
             "default": "deg_trim",
             "description": "Suffix of file names after resampling the grid."
         },
+        "downsample_lib": {
+            "type": "string",
+            "enum": ["xarray", "xesmf", "cdo"],
+            "default": "xesmf",
+            "description": "Library to use for downsampling. Options are 'xarray', 'xesmf', or 'cdo'."
+        },
+        "downsample_new_min_lat": {
+            "type": "number",
+            "description": "Minimum latitude of the new grid."
+        },
+        "downsample_new_max_lat": {
+            "type": "number",
+            "description": "Maximum latitude of the new grid."
+        },
+        "downsample_new_min_lon": {
+            "type": "number",
+            "description": "Minimum longitude of the new grid."
+        },
+        "downsample_new_max_lon": {
+            "type": "number",
+            "description": "Maximum longitude of the new grid."
+        },
         "truncate_date": {
             "type": "boolean",
             "default": true,
