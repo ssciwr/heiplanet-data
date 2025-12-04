@@ -413,6 +413,10 @@ def downsample_resolution_with_xesmf(
         agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
             If None, default aggregation is used, i.e. `bilinear` for all variables.
     """
+
+    def get_default_values(val: float | None, arr: xr.DataArray, func: str) -> float:
+        return getattr(arr, func)().values if val is None else val
+
     old_res = check_downsample_condition(
         dataset,
         new_resolution,
@@ -420,14 +424,10 @@ def downsample_resolution_with_xesmf(
         lon_name=lon_name,
     )
 
-    if new_min_lat is None:
-        new_min_lat = dataset[lat_name].min().values
-    if new_max_lat is None:
-        new_max_lat = dataset[lat_name].max().values
-    if new_min_lon is None:
-        new_min_lon = dataset[lon_name].min().values
-    if new_max_lon is None:
-        new_max_lon = dataset[lon_name].max().values
+    new_min_lat = get_default_values(new_min_lat, dataset[lat_name], "min")
+    new_max_lat = get_default_values(new_max_lat, dataset[lat_name], "max")
+    new_min_lon = get_default_values(new_min_lon, dataset[lon_name], "min")
+    new_max_lon = get_default_values(new_max_lon, dataset[lon_name], "max")
 
     # prepare the new dataset
     min_num = 0.001
