@@ -1,7 +1,7 @@
 name: CI Check
-on: 
+on:
   push:
-    branches: 
+    branches:
       - main
   pull_request:
   workflow_dispatch:
@@ -11,46 +11,47 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.11', '3.12']
+        python-version: ["3.11", "3.12"]
     services:
       docker:
         image: docker:24.0.0
         options: --privileged
     steps:
-    - name: Getting repository
-      uses: actions/checkout@v4
+      - name: Getting repository
+        uses: actions/checkout@v4
 
-    - name: Set up Miniconda
-      uses: conda-incubator/setup-miniconda@835234971496cad1653abb28a638a281cf32541f
-      with:
-        auto-activate-base: false
-        channels: conda-forge
-        channel-priority: strict
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@835234971496cad1653abb28a638a281cf32541f
+        with:
+          auto-activate-base: false
+          channels: conda-forge
+          channel-priority: strict
 
-    - name: Install dependencies (with conda, for xesmf)
-      run: |
-        conda create -n test_env python=${{ matrix.python-version }} -y
-        conda init bash
-        source ~/.bashrc
-        conda activate test_env
-        conda install -y -c conda-forge esmf esmpy
-      shell: bash -l {0}
+      - name: Install dependencies (with conda, for xesmf)
+        run: |
+          conda create -n test_env python=${{ matrix.python-version }} -y
+          conda init bash
+          source ~/.bashrc
+          conda activate test_env
+          conda install -y -c conda-forge esmf esmpy
+          conda install -y -c conda-forge python-cdo
+        shell: bash -l {0}
 
-    - name: Install dependencies and package
-      run: |
-        conda run -n test_env python -m pip install --upgrade pip
-        conda run -n test_env python -m pip install -e .[dev]
+      - name: Install dependencies and package
+        run: |
+          conda run -n test_env python -m pip install --upgrade pip
+          conda run -n test_env python -m pip install -e .[dev]
 
-    - name: Create .cdsapirc file
-      run: |
-        echo "url: https://cds.climate.copernicus.eu/api" >> ~/.cdsapirc
-        echo "key: ${{ secrets.CDSAPI_KEY }}" >> ~/.cdsapirc
+      - name: Create .cdsapirc file
+        run: |
+          echo "url: https://cds.climate.copernicus.eu/api" >> ~/.cdsapirc
+          echo "key: ${{ secrets.CDSAPI_KEY }}" >> ~/.cdsapirc
 
-    - name: Execute PyTest
-      run: |
-        conda run -n test_env python -m pytest -svv --cov=heiplanet_data --cov-report=xml:heiplanet_data/coverage_re/coverage.xml
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v5
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        directory: ./heiplanet_data/coverage_re/
+      - name: Execute PyTest
+        run: |
+          conda run -n test_env python -m pytest -svv --cov=heiplanet_data --cov-report=xml:heiplanet_data/coverage_re/coverage.xml
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: ./heiplanet_data/coverage_re/

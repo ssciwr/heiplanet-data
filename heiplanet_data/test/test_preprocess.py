@@ -9,6 +9,8 @@ from conftest import get_files
 import json
 from datetime import datetime
 import xesmf as xe
+from cdo import Cdo
+import textwrap
 
 
 @pytest.fixture()
@@ -57,13 +59,20 @@ def get_dataset(get_data):
         {"t2m": data_t2m, "tp": data_tp},
         coords={
             "time": data_t2m.time,
-            "latitude": data_t2m.latitude,
-            "longitude": data_t2m.longitude,
+            "latitude": (
+                "latitude",
+                data_t2m.latitude.data,
+                {"units": "degrees_north"},
+            ),
+            "longitude": (
+                "longitude",
+                data_t2m.longitude.data,
+                {"units": "degrees_east"},
+            ),
         },
     )
     # create attributes for the dataset
     dataset.attrs.update({"GRIB_centre": "ecmf"})
-    dataset["longitude"].attrs.update({"units": "degrees_east"})
     return dataset
 
 
@@ -352,26 +361,26 @@ def test_convert_m_to_mm_with_attributes_inplace(get_dataset):
 
 def test_check_downsample_condition(get_dataset):
     with pytest.raises(ValueError):
-        preprocess.downsample_resolution(get_dataset, new_resolution=0)
+        preprocess.check_downsample_condition(get_dataset, new_resolution=0)
     with pytest.raises(ValueError):
-        preprocess.downsample_resolution(get_dataset, new_resolution=-0.5)
+        preprocess.check_downsample_condition(get_dataset, new_resolution=-0.5)
     with pytest.raises(ValueError):
-        preprocess.downsample_resolution(get_dataset, new_resolution=0.5)
+        preprocess.check_downsample_condition(get_dataset, new_resolution=0.5)
     with pytest.raises(ValueError):
-        preprocess.downsample_resolution(get_dataset, new_resolution=0.2)
+        preprocess.check_downsample_condition(get_dataset, new_resolution=0.2)
     with pytest.raises(ValueError):
-        preprocess.downsample_resolution(
+        preprocess.check_downsample_condition(
             get_dataset, new_resolution=1.0, agg_funcs="invalid"
         )
     with pytest.raises(ValueError):
-        preprocess.downsample_resolution(
+        preprocess.check_downsample_condition(
             get_dataset,
             new_resolution=1.0,
             lat_name="invalid_lat",
             lon_name="longitude",
         )
     with pytest.raises(ValueError):
-        preprocess.downsample_resolution(
+        preprocess.check_downsample_condition(
             get_dataset,
             new_resolution=1.0,
             lat_name="latitude",
@@ -440,10 +449,7 @@ def test_downsample_resolution_custom(get_dataset):
 
     # custom agg map and agg funcs with missing variable
     downsampled_dataset = preprocess.downsample_resolution(
-        get_dataset,
-        new_resolution=1.0,
-        agg_funcs={"t2m": "mean"},
-        agg_map={"mean": np.mean},
+        get_dataset, new_resolution=1.0, agg_funcs={"t2m": "mean"}
     )  # tp will also use mean
     assert np.allclose(
         downsampled_dataset["tp"].values.flatten(),
@@ -529,7 +535,7 @@ def test_downsample_resolution_with_xesmf_custom(get_dataset):
 
     # check if the data is downsampled correctly
     assert np.allclose(
-        downsampled_dataset["t2m"].values.flatten(), result_t2m.values.flatten()
+        downsampled_dataset["t2m"].values.flatten(), out_ds["t2m"].values.flatten()
     )
     assert np.allclose(
         downsampled_dataset["tp"].values.flatten(), out_ds["tp"].values.flatten()
@@ -564,6 +570,97 @@ def test_downsample_resolution_with_xesmf_default(get_dataset):
     tp_new = downsampled_dataset.tp.values
     assert np.nanmin(tp_new) >= np.nanmin(tp_old) - 1e-6
     assert np.nanmax(tp_new) <= np.nanmax(tp_old) + 1e-6
+
+
+def test_downsample_resolution_with_cdo_default(get_dataset, tmp_path):
+    # downsample resolution with cdo
+    downsampled_dataset = preprocess.downsample_resolution_with_cdo(
+        get_dataset,
+        new_resolution=1.0,
+        new_min_lat=None,
+        new_lat_size=None,
+        new_min_lon=None,
+        new_lon_size=None,
+        lat_name="latitude",
+        lon_name="longitude",
+        agg_funcs=None,
+        gridtype="lonlat",
+    )
+
+    # check if the number of dimensions is kept
+    assert len(downsampled_dataset["t2m"].dims) == 3
+    assert len(downsampled_dataset["tp"].dims) == 3
+
+    # check if the coordinates are adjusted
+    assert np.allclose(
+        downsampled_dataset["t2m"].latitude.values, [0.0]
+    )  # TODO: check the difference with xesmf
+    assert np.allclose(downsampled_dataset["t2m"].longitude.values, [0.0, 1.0])
+
+    # manually use cdo to downsample for comparison
+    cdo = Cdo()
+    var_tmp_files = {}
+    for var in get_dataset.data_vars:
+        var_tmp_file = tmp_path / f"{var}_input.nc"
+        get_dataset[[var]].to_netcdf(var_tmp_file)
+        var_tmp_files[var] = var_tmp_file
+
+    gridspec = """
+        gridtype = lonlat
+        xfirst = 0.0
+        xinc = 1.0
+        xsize = 2
+        yfirst = 0.0
+        yinc = 1.0
+        ysize = 1
+    """
+    gridspec = textwrap.dedent(gridspec).strip()
+    gridspec_file = tmp_path / "gridspec.txt"
+    with open(gridspec_file, "w") as f:
+        f.write(gridspec)
+
+    result = {}
+    for var, var_tmp_file in var_tmp_files.items():
+        tmp_ds = cdo.remapbil(
+            str(gridspec_file),
+            input=str(var_tmp_file),
+            returnXDataset=True,
+        )
+        result[var] = tmp_ds
+
+    out_ds = xr.merge(result.values())
+
+    # check if the data is downsampled correctly
+    assert np.allclose(
+        downsampled_dataset["t2m"].values.flatten(), out_ds["t2m"].values.flatten()
+    )
+    assert np.allclose(
+        downsampled_dataset["tp"].values.flatten(), out_ds["tp"].values.flatten()
+    )
+
+
+def test_downsample_resolution_with_cdo_custom(get_dataset):
+    downsampled_dataset = preprocess.downsample_resolution_with_cdo(
+        get_dataset,
+        new_resolution=1.0,
+        new_min_lat=0.5,
+        new_lat_size=1,
+        new_min_lon=0.0,
+        new_lon_size=2,
+        lat_name="latitude",
+        lon_name="longitude",
+        agg_funcs={"t2m": "nn", "tp": "nn"},  # nearest neighbor
+        gridtype="lonlat",
+    )
+
+    assert downsampled_dataset["t2m"].shape == (2, 1, 2)
+
+    assert np.allclose(downsampled_dataset["tp"].latitude.values, [0.5])
+
+    assert np.allclose(
+        downsampled_dataset["t2m"].values.flatten(),
+        get_dataset["t2m"][:, 1, [0, 2]].values.flatten(),
+    )
 
 
 def test_align_lon_lat_with_popu_data_invalid(get_dataset):
@@ -712,9 +809,11 @@ def test_resample_resolution_invalid(get_dataset):
         preprocess.resample_resolution(get_dataset, lat_name="invalid_lat")
     with pytest.raises(ValueError):
         preprocess.resample_resolution(get_dataset, lon_name="invalid_lon")
+    with pytest.raises(ValueError):
+        preprocess.resample_resolution(get_dataset, lib="invalid_lib")
 
 
-def test_resample_resolution_default(get_dataset):
+def test_resample_resolution(get_dataset):
     # downsample resolution with xarray
     resampled_dataset_xarray = preprocess.resample_resolution(
         get_dataset, new_resolution=1.0, lib="xarray"
@@ -746,6 +845,25 @@ def test_resample_resolution_default(get_dataset):
     # bilinear check
     assert np.nanmin(t2m_new) >= np.nanmin(t2m_old) - 1e-6
     assert np.nanmax(t2m_new) <= np.nanmax(t2m_old) + 1e-6
+
+    # downsample resolution with cdo
+    resampled_dataset_cdo = preprocess.resample_resolution(
+        get_dataset,
+        new_resolution=1.0,
+        lib="cdo",
+        new_min_lat=0.0,
+        new_lat_size=1,
+        new_min_lon=0.0,
+        new_lon_size=2,
+        gridtype="lonlat",
+        agg_funcs={"t2m": "nn", "tp": "nn"},  # nearest neighbor
+    )
+
+    assert resampled_dataset_cdo["tp"].shape == (2, 1, 2)
+    assert np.allclose(
+        resampled_dataset_cdo["tp"].values.flatten(),
+        get_dataset["tp"][:, 0, [0, 2]].values.flatten(),
+    )
 
     # upsample resolution
     resampled_dataset = preprocess.resample_resolution(get_dataset, new_resolution=0.1)
@@ -1006,7 +1124,7 @@ def test_apply_preprocessing_convert_m_to_mm(get_dataset):
     assert updated_fname == f"{fname_base}_mm"
 
 
-def test_apply_preprocessing_downsample(get_dataset):
+def test_apply_preprocessing_downsample_xarray(get_dataset):
     fname_base = "test_data"
 
     settings = {
@@ -1027,6 +1145,58 @@ def test_apply_preprocessing_downsample(get_dataset):
 
     # check if file name is updated
     assert updated_fname == f"{fname_base}_1p0deg_trim"
+
+
+def test_apply_preprocessing_downsample_xesmf(get_dataset):
+    fname_base = "test_data"
+
+    settings = {
+        "resample_grid": True,
+        "resample_grid_vname": ["latitude", "longitude"],
+        "resample_degree": 1.0,
+        "resample_grid_fname": "deg",
+        "downsample_lib": "xesmf",
+        "downsample_new_min_lat": 0.0,
+        "downsample_new_max_lat": 0.5,
+        "downsample_new_min_lon": 0.0,
+        "downsample_new_max_lon": 1.0,
+    }
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    # check if the dimensions are reduced
+    assert np.allclose(preprocessed_dataset["t2m"].latitude.values, [0.5])
+    assert np.allclose(preprocessed_dataset["t2m"].longitude.values, [0.0, 1.0])
+
+    # check if file name is updated
+    assert updated_fname == f"{fname_base}_1p0deg"
+
+
+def test_apply_preprocessing_downsample_cdo(get_dataset):
+    fname_base = "test_data"
+
+    settings = {
+        "resample_grid": True,
+        "resample_grid_vname": ["latitude", "longitude"],
+        "resample_degree": 1.0,
+        "resample_grid_fname": "deg",
+        "downsample_lib": "cdo",
+        "downsample_new_min_lat": 0.0,
+        "downsample_new_lat_size": 1,
+        "downsample_new_min_lon": 0.0,
+        "downsample_new_lon_size": 2,
+        "downsample_gridtype": "lonlat",
+    }
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    # check if the dimensions are reduced
+    assert np.allclose(preprocessed_dataset["t2m"].latitude.values, [0.0])
+    assert np.allclose(preprocessed_dataset["t2m"].longitude.values, [0.0, 1.0])
 
 
 def test_apply_preprocessing_upsample(get_dataset):

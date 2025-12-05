@@ -1,4 +1,4 @@
-from typing import TypeVar, Union, Callable, Dict, Any, Tuple, Literal
+from typing import TypeVar, Union, Dict, Any, Tuple, Literal
 import xarray as xr
 import numpy as np
 import warnings
@@ -8,6 +8,9 @@ import geopandas as gpd
 import pandas as pd
 import re
 import xesmf as xe
+import tempfile
+import textwrap
+from cdo import Cdo
 
 
 T = TypeVar("T", bound=Union[np.float64, xr.DataArray])
@@ -277,7 +280,6 @@ def downsample_resolution(
     lat_name: str = "latitude",
     lon_name: str = "longitude",
     agg_funcs: Dict[str, str] | None = None,
-    agg_map: Dict[str, Callable[[Any], float]] | None = None,
 ) -> xr.Dataset:
     """Downsample the resolution of a dataset.
 
@@ -288,9 +290,6 @@ def downsample_resolution(
         lon_name (str): Name of the longitude coordinate. Default is "longitude".
         agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
             If None, default aggregation (i.e. mean) is used. Default is None.
-        agg_map (Dict[str, Callable[[Any], float]] | None): Mapping of string
-            to aggregation functions.
-            If None, default mapping is used. Default is None.
 
     Returns:
         xr.Dataset: Dataset with changed resolution.
@@ -309,23 +308,19 @@ def downsample_resolution(
         lat_name: weight,
     }
 
-    if agg_map is None:
-        agg_map = {
-            "mean": np.mean,
-            "sum": np.sum,
-            "max": np.max,
-            "min": np.min,
-        }
     if agg_funcs is None:
         agg_funcs = dict.fromkeys(dataset.data_vars, "mean")
 
     result = {}
     for var in dataset.data_vars:
         func_str = agg_funcs.get(var, "mean")
-        func = agg_map.get(func_str, np.mean)
 
         # apply coarsening and reduction per variable
-        result[var] = dataset[var].coarsen(**dim_kwargs, boundary="trim").reduce(func)
+        result[var] = (
+            dataset[var]
+            .coarsen(**dim_kwargs, boundary="trim")
+            .reduce(getattr(np, func_str))  # np.mean, np.sum, etc.
+        )
         result[var].attrs = dataset[var].attrs.copy()
 
     # copy attributes of the dataset
@@ -414,7 +409,9 @@ def downsample_resolution_with_xesmf(
             If None, default aggregation is used, i.e. `bilinear` for all variables.
     """
 
-    def get_default_values(val: float | None, arr: xr.DataArray, func: str) -> float:
+    def _get_default_values(val: float | None, arr: xr.DataArray, func: str) -> float:
+        # using item() instead of values is also possible,
+        # but only works if the result of func is a single value
         return getattr(arr, func)().values if val is None else val
 
     old_res = check_downsample_condition(
@@ -424,10 +421,10 @@ def downsample_resolution_with_xesmf(
         lon_name=lon_name,
     )
 
-    new_min_lat = get_default_values(new_min_lat, dataset[lat_name], "min")
-    new_max_lat = get_default_values(new_max_lat, dataset[lat_name], "max")
-    new_min_lon = get_default_values(new_min_lon, dataset[lon_name], "min")
-    new_max_lon = get_default_values(new_max_lon, dataset[lon_name], "max")
+    new_min_lat = _get_default_values(new_min_lat, dataset[lat_name], "min")
+    new_max_lat = _get_default_values(new_max_lat, dataset[lat_name], "max")
+    new_min_lon = _get_default_values(new_min_lon, dataset[lon_name], "min")
+    new_max_lon = _get_default_values(new_max_lon, dataset[lon_name], "max")
 
     # prepare the new dataset
     min_num = 0.001
@@ -521,6 +518,128 @@ def downsample_resolution_with_xesmf(
     return result_dataset
 
 
+def downsample_resolution_with_cdo(
+    dataset: xr.Dataset,
+    new_resolution: float = 0.5,
+    new_min_lat: float | None = None,
+    new_lat_size: int | None = None,
+    new_min_lon: float | None = None,
+    new_lon_size: int | None = None,
+    lat_name: str = "latitude",
+    lon_name: str = "longitude",
+    agg_funcs: Dict[str, str] | None = None,
+    gridtype: Literal["gaussian", "lonlat", "curvilinear", "unstructured"] = "lonlat",
+) -> xr.Dataset:
+    """Downsample the resolution of a dataset using CDO.
+
+    Args:
+        dataset (xr.Dataset): Dataset to change resolution.
+        new_resolution (float): New resolution in degrees. Default is 0.5.
+        new_min_lat (float): Minimum latitude of the new grid. Default is None.
+        new_lat_size (int): Size of latitude of the new grid. Default is None.
+        new_min_lon (float): Minimum longitude of the new grid. Default is None.
+        new_lon_size (int): Size of longitude of the new grid. Default is None.
+        lat_name (str): Name of the latitude coordinate. Default is "latitude".
+        lon_name (str): Name of the longitude coordinate. Default is "longitude".
+        agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
+            If None, default aggregation is used, i.e. `bil` (bilinear). Default is None.
+            Possible keys are: `nn` (nearest neighbor),
+                                `bil` (bilinear),
+                                `bic` (bicubic),
+                                `con` (conservative),
+                                `con2` (conservative 2nd order).
+        gridtype (Literal["gaussian", "lonlat", "curvilinear", "unstructured"]):
+            Type of the grid. Default is "lonlat".
+    """
+
+    # helper functions
+    def _get_min_value(val: float | None, arr: xr.DataArray) -> float:
+        return arr.min().item() if val is None else val
+
+    def _get_size_value(val: float | None, arr: xr.DataArray, res: float) -> float:
+        size = int(np.round((arr.max() - arr.min()).item() / res, 0)) + 1
+        return size if val is None else val
+
+    # check downsampling condition
+    _ = check_downsample_condition(
+        dataset,
+        new_resolution,
+        lat_name=lat_name,
+        lon_name=lon_name,
+    )
+
+    # prepare new grid parameters
+    new_min_lat = _get_min_value(new_min_lat, dataset[lat_name])
+    new_lat_size = _get_size_value(new_lat_size, dataset[lat_name], new_resolution)
+    new_min_lon = _get_min_value(new_min_lon, dataset[lon_name])
+    new_lon_size = _get_size_value(new_lon_size, dataset[lon_name], new_resolution)
+
+    # prepare aggregation functions
+    if agg_funcs is None:
+        agg_funcs = dict.fromkeys(dataset.data_vars, "bil")
+
+    # make sure the dataset works with CDO
+    # i.e. having "lat" and "lon" as coordinate names
+    # and Conventions attribute set to "CF-1.7"
+    old_lat_name = lat_name
+    old_lon_name = lon_name
+    dataset = dataset.rename({old_lat_name: "lat", old_lon_name: "lon"})
+    dataset.attrs.update({"Conventions": "CF-1.7"})
+
+    # split dataset into individual data variables and save to temporary files
+    ds_tmp_files = {}
+    for var in dataset.data_vars:
+        tmp_file = tempfile.NamedTemporaryFile(suffix=f"_{var}.nc", delete=False)
+        tmp_file_name = tmp_file.name
+        tmp_file.close()  # so xarray can write to it
+        dataset[[var]].to_netcdf(
+            tmp_file_name
+        )  # use [[var]] to keep as dataset with coords
+        ds_tmp_files[var] = tmp_file_name
+
+    # prepare gridspec file
+    gridspec = f"""
+        gridtype = {gridtype}
+        xfirst = {new_min_lon}
+        xinc = {new_resolution}
+        xsize = {new_lon_size}
+        yfirst = {new_min_lat}
+        yinc = {new_resolution}
+        ysize = {new_lat_size}
+    """
+    gridspec = textwrap.dedent(gridspec).strip()
+    gridspec_file = tempfile.NamedTemporaryFile(suffix="_gridspec.txt", delete=False)
+    gridspec_file_name = gridspec_file.name
+    gridspec_file.write(gridspec.encode())
+    gridspec_file.close()
+
+    # apply cdo remap to each variable file
+    tmp_dss = {}
+    cdo = Cdo()
+    for var, tmp_file_name in ds_tmp_files.items():
+        agg_func = agg_funcs.get(var, "bil")
+        tmp_ds = getattr(cdo, f"remap{agg_func}")(
+            gridspec_file_name,
+            input=tmp_file_name,
+            returnXDataset=True,
+        )
+        tmp_dss[var] = tmp_ds
+
+        # remove temporary variable file
+        Path(tmp_file_name).unlink()
+
+    # remove temporary gridspec file
+    Path(gridspec_file_name).unlink()
+
+    # create a new dataset with the regridded data
+    result_dataset = xr.merge(tmp_dss.values())
+
+    # restore original coordinate names
+    result_dataset = result_dataset.rename({"lat": old_lat_name, "lon": old_lon_name})
+
+    return result_dataset
+
+
 def upsample_resolution(
     dataset: xr.Dataset,
     new_resolution: float = 0.1,
@@ -599,7 +718,6 @@ def resample_resolution(
     lat_name: str = "latitude",
     lon_name: str = "longitude",
     agg_funcs: Dict[str, str] | None = None,
-    agg_map: Dict[str, Callable[[Any], float]] | None = None,
     expected_longitude_max: np.float64 = np.float64(179.75),
     upsample_method_map: Dict[str, str] | None = None,
     lib: Literal["xarray", "xesmf", "cdo"] = "xesmf",
@@ -607,6 +725,9 @@ def resample_resolution(
     new_max_lat: float | None = None,
     new_min_lon: float | None = None,
     new_max_lon: float | None = None,
+    new_lat_size: int | None = None,
+    new_lon_size: int | None = None,
+    gridtype: Literal["gaussian", "lonlat", "curvilinear", "unstructured"] = "lonlat",
 ) -> xr.Dataset:
     """Resample the grid of a dataset to a new resolution.
 
@@ -617,8 +738,6 @@ def resample_resolution(
         lon_name (str): Name of the longitude coordinate. Default is "longitude".
         agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
             If None, default aggregation (i.e. mean) is used. Default is None.
-        agg_map (Dict[str, Callable[[Any], float]] | None): Mapping of string
-            to aggregation functions. If None, default mapping is used. Default is None.
         expected_longitude_max (np.float64): Expected maximum longitude
             after adjustment. Default is np.float64(179.75).
         upsample_method_map (Dict[str, str] | None): Mapping of variable names to
@@ -629,6 +748,10 @@ def resample_resolution(
         new_max_lat (float | None): Maximum latitude of the new grid. Default is None.
         new_min_lon (float | None): Minimum longitude of the new grid. Default is None.
         new_max_lon (float | None): Maximum longitude of the new grid. Default is None.
+        new_lat_size (int | None): Size of latitude of the new grid. Default is None.
+        new_lon_size (int | None): Size of longitude of the new grid. Default is None.
+        gridtype (Literal["gaussian", "lonlat", "curvilinear", "unstructured"]):
+            Type of the grid. Default is "lonlat".
 
     Returns:
         xr.Dataset: Resampled dataset with changed resolution.
@@ -651,7 +774,6 @@ def resample_resolution(
                 lat_name=lat_name,
                 lon_name=lon_name,
                 agg_funcs=agg_funcs,
-                agg_map=agg_map,
             )
             return align_lon_lat_with_popu_data(
                 dataset,
@@ -671,6 +793,21 @@ def resample_resolution(
                 lon_name=lon_name,
                 agg_funcs=agg_funcs,
             )
+        elif lib == "cdo":
+            return downsample_resolution_with_cdo(
+                dataset,
+                new_resolution=new_resolution,
+                new_min_lat=new_min_lat,
+                new_lat_size=new_lat_size,
+                new_min_lon=new_min_lon,
+                new_lon_size=new_lon_size,
+                lat_name=lat_name,
+                lon_name=lon_name,
+                agg_funcs=agg_funcs,
+                gridtype=gridtype,
+            )
+        else:
+            raise ValueError("lib must be one of 'xarray', 'xesmf', or 'cdo'.")
 
     return upsample_resolution(
         dataset,
@@ -844,11 +981,19 @@ def _apply_preprocessing(
     lon_name = resample_grid_vname[1] if resample_grid_vname else None
     resample_grid_fname = settings.get("resample_grid_fname")
     resample_degree = settings.get("resample_degree")
+    resample_agg_funcs = settings.get("resample_agg_funcs", None)
+    resample_upsample_method_map = settings.get("resample_upsample_method_map", None)
+    resample_expected_longitude_max = settings.get(
+        "resample_expected_longitude_max", np.float64(179.75)
+    )
     lib = settings.get("downsample_lib", "xesmf")
     new_min_lat = settings.get("downsample_new_min_lat", None)
     new_max_lat = settings.get("downsample_new_max_lat", None)
     new_min_lon = settings.get("downsample_new_min_lon", None)
     new_max_lon = settings.get("downsample_new_max_lon", None)
+    new_lat_size = settings.get("downsample_new_lat_size", None)
+    new_lon_size = settings.get("downsample_new_lon_size", None)
+    gridtype = settings.get("downsample_gridtype", "lonlat")
 
     truncate_date = settings.get("truncate_date", False)
     truncate_date_from = settings.get("truncate_date_from")
@@ -894,12 +1039,18 @@ def _apply_preprocessing(
             new_resolution=resample_degree,
             lat_name=lat_name,
             lon_name=lon_name,
+            agg_funcs=resample_agg_funcs,
+            expected_longitude_max=resample_expected_longitude_max,
+            upsample_method_map=resample_upsample_method_map,
             lib=lib,
             new_min_lat=new_min_lat,
             new_max_lat=new_max_lat,
             new_min_lon=new_min_lon,
             new_max_lon=new_max_lon,
-        )  # agg_funcs, agg_map, and upsample_method_map are omitted for simplicity
+            new_lat_size=new_lat_size,
+            new_lon_size=new_lon_size,
+            gridtype=gridtype,
+        )
         degree_str = _replace_decimal_point(resample_degree)
         file_name_base += f"_{degree_str}{resample_grid_fname}"
 
