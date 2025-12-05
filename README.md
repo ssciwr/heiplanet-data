@@ -11,7 +11,26 @@
 
 A data processing pipeline for Copernicus and Eurostat data. Please visit the [documentation](https://ssciwr.github.io/heiplanet-data/) for further information.
 
-**Further information:**
+## Installation
+
+The package currently support Python 3.11 to 3.13
+
+* Create a conda environment
+    ```bash
+    conda create -n heiplanet-data python=3.13 -y
+    conda init bash
+    source ~/.bashrc
+    conda activate heiplanet-data
+    ```
+* Install the package from the repository
+    * under the root folder of the repository and the conda environment is activated
+    * `pip install .`
+* Install `esmf` and `esmpy` from `conda-forge` for `xESMF` package to perform downsampling
+    `conda install -y -c conda-forge esmf esmpy`
+* Install `cdo` python package from `conda-forge` in case of using `cdo` for downsampling
+    `conda install -c conda-forge python-cdo`
+
+## Further information
 
 * [About](docs/about.md): Information about the project, research group, and development group
 * [Data](docs/data.md): Used data sources and conventions

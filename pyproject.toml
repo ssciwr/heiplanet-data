@@ -28,7 +28,9 @@ dependencies = [
   "geopandas",
   "dask[complete]",
   "scipy",
-  "isimip-client"
+  "isimip-client",
+  "xesmf",
+  "cdo",
 ]
 
 [project.optional-dependencies]
