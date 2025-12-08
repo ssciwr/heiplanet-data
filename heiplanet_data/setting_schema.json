@@ -93,7 +93,7 @@
             },
             "description": "Upsampling methods for each variable during resampling."
         },
-        "resample_expected_longitude_max": {
+        "downsample_max_lon_xarray": {
             "type": "number",
             "default": 179.75,
             "description": "Expected maximum longitude value after resampling with xarray to match population data."

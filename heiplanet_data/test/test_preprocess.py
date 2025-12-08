@@ -388,9 +388,9 @@ def test_check_downsample_condition(get_dataset):
         )
 
 
-def test_downsample_resolution_default(get_dataset):
+def test_downsample_resolution_with_xarray_default(get_dataset):
     # downsample resolution
-    downsampled_dataset = preprocess.downsample_resolution(
+    downsampled_dataset = preprocess.downsample_resolution_with_xarray(
         get_dataset, new_resolution=1.0
     )
 
@@ -414,13 +414,13 @@ def test_downsample_resolution_default(get_dataset):
         assert downsampled_dataset[var].attrs == get_dataset[var].attrs
 
 
-def test_downsample_resolution_custom(get_dataset):
+def test_downsample_resolution_with_xarray_custom(get_dataset):
     # downsample resolution with custom aggregation functions
     agg_funcs = {
         "t2m": "mean",
         "tp": "sum",
     }
-    downsampled_dataset = preprocess.downsample_resolution(
+    downsampled_dataset = preprocess.downsample_resolution_with_xarray(
         get_dataset, new_resolution=1.0, agg_funcs=agg_funcs
     )
 
@@ -448,7 +448,7 @@ def test_downsample_resolution_custom(get_dataset):
         assert downsampled_dataset[var].attrs == get_dataset[var].attrs
 
     # custom agg map and agg funcs with missing variable
-    downsampled_dataset = preprocess.downsample_resolution(
+    downsampled_dataset = preprocess.downsample_resolution_with_xarray(
         get_dataset, new_resolution=1.0, agg_funcs={"t2m": "mean"}
     )  # tp will also use mean
     assert np.allclose(
@@ -804,19 +804,26 @@ def test_upsample_resolution_custom(get_dataset):
 
 def test_resample_resolution_invalid(get_dataset):
     with pytest.raises(ValueError):
-        preprocess.resample_resolution(get_dataset, new_resolution=-0.5)
+        resolution_config = preprocess.ResolutionConfig(new_resolution=-0.5)
+        preprocess.resample_resolution(get_dataset, resolution_config=resolution_config)
     with pytest.raises(ValueError):
-        preprocess.resample_resolution(get_dataset, lat_name="invalid_lat")
+        resolution_config = preprocess.ResolutionConfig(lat_name="invalid_lat")
+        preprocess.resample_resolution(get_dataset, resolution_config=resolution_config)
     with pytest.raises(ValueError):
-        preprocess.resample_resolution(get_dataset, lon_name="invalid_lon")
+        resolution_config = preprocess.ResolutionConfig(lon_name="invalid_lon")
+        preprocess.resample_resolution(get_dataset, resolution_config=resolution_config)
     with pytest.raises(ValueError):
-        preprocess.resample_resolution(get_dataset, lib="invalid_lib")
+        resolution_config = preprocess.ResolutionConfig(downsample_lib="invalid_lib")
+        preprocess.resample_resolution(get_dataset, resolution_config=resolution_config)
 
 
 def test_resample_resolution(get_dataset):
     # downsample resolution with xarray
     resampled_dataset_xarray = preprocess.resample_resolution(
-        get_dataset, new_resolution=1.0, lib="xarray"
+        get_dataset,
+        resolution_config=preprocess.ResolutionConfig(
+            new_resolution=1.0, downsample_lib="xarray"
+        ),
     )
 
     # check if the coordinates are adjusted
@@ -832,12 +839,12 @@ def test_resample_resolution(get_dataset):
     # downsample resolution with xesmf
     resampled_dataset_xesmf = preprocess.resample_resolution(
         get_dataset,
-        new_resolution=1.0,
-        lib="xesmf",
-        new_min_lat=0.0,
-        new_max_lat=0.5,
-        new_min_lon=0.0,
-        new_max_lon=1.0,
+        resolution_config=preprocess.ResolutionConfig(
+            new_resolution=1.0, downsample_lib="xesmf"
+        ),
+        grid_config=preprocess.GridConfig(
+            new_min_lat=0.0, new_max_lat=0.5, new_min_lon=0.0, new_max_lon=1.0
+        ),
     )
     # bilinear check
     t2m_old = get_dataset.tp.values
@@ -849,14 +856,18 @@ def test_resample_resolution(get_dataset):
     # downsample resolution with cdo
     resampled_dataset_cdo = preprocess.resample_resolution(
         get_dataset,
-        new_resolution=1.0,
-        lib="cdo",
-        new_min_lat=0.0,
-        new_lat_size=1,
-        new_min_lon=0.0,
-        new_lon_size=2,
-        gridtype="lonlat",
-        agg_funcs={"t2m": "nn", "tp": "nn"},  # nearest neighbor
+        resolution_config=preprocess.ResolutionConfig(
+            new_resolution=1.0,
+            downsample_lib="cdo",
+            agg_funcs={"t2m": "nn", "tp": "nn"},
+        ),
+        grid_config=preprocess.GridConfig(
+            new_min_lat=0.0,
+            new_lat_size=1,
+            new_min_lon=0.0,
+            new_lon_size=2,
+            gridtype="lonlat",
+        ),
     )
 
     assert resampled_dataset_cdo["tp"].shape == (2, 1, 2)
@@ -866,7 +877,9 @@ def test_resample_resolution(get_dataset):
     )
 
     # upsample resolution
-    resampled_dataset = preprocess.resample_resolution(get_dataset, new_resolution=0.1)
+    resampled_dataset = preprocess.resample_resolution(
+        get_dataset, resolution_config=preprocess.ResolutionConfig(new_resolution=0.1)
+    )
 
     # check if the coordinates are adjusted
     assert np.allclose(
@@ -1190,7 +1203,7 @@ def test_apply_preprocessing_downsample_cdo(get_dataset):
         "downsample_gridtype": "lonlat",
     }
     # preprocess the data file
-    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+    preprocessed_dataset, _ = preprocess._apply_preprocessing(
         get_dataset, fname_base, settings=settings
     )
 

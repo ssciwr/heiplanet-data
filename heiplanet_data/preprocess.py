@@ -11,6 +11,7 @@ import xesmf as xe
 import tempfile
 import textwrap
 from cdo import Cdo
+from dataclasses import dataclass
 
 
 T = TypeVar("T", bound=Union[np.float64, xr.DataArray])
@@ -274,7 +275,7 @@ def check_downsample_condition(
     return old_resolution
 
 
-def downsample_resolution(
+def downsample_resolution_with_xarray(
     dataset: xr.Dataset,
     new_resolution: float = 0.5,
     lat_name: str = "latitude",
@@ -647,7 +648,7 @@ def upsample_resolution(
     lon_name: str = "longitude",
     method_map: Dict[str, str] | None = None,
 ) -> xr.Dataset:
-    """Upsample the resolution of a dataset.
+    """Upsample the resolution of a dataset using `xarray.interp`.
 
     Args:
         dataset (xr.Dataset): Dataset to change resolution.
@@ -712,50 +713,97 @@ def upsample_resolution(
     return result_dataset
 
 
+@dataclass
+class ResolutionConfig:
+    """Configuration for resolution resampling.
+
+    Attributes:
+        new_resolution (float): New resolution in degrees. Default is 0.5.
+        lat_name (str): Name of the latitude coordinate. Default is "latitude".
+        lon_name (str): Name of the longitude coordinate. Default is "longitude".
+        downsample_lib (Literal["xarray", "xesmf", "cdo"]): Library to use for downsampling.
+            Options are "xarray", "xesmf", or "cdo". Default is "xesmf".
+        agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
+            If None, default aggregation of corresponding library is used. Default is None.
+        upsample_method_map (Dict[str, str] | None): Mapping of variable names to
+            interpolation methods. If None, linear interpolation is used. Default is None.
+    """
+
+    new_resolution: float = 0.5
+    lat_name: str = "latitude"
+    lon_name: str = "longitude"
+    downsample_lib: Literal["xarray", "xesmf", "cdo"] = "xesmf"
+    agg_funcs: Dict[str, str] | None = None
+    upsample_method_map: Dict[str, str] | None = None
+
+
+@dataclass
+class GridConfig:
+    """Configuration for grid specification for resampling.
+
+    Attributes:
+        expected_longitude_max_xarray (np.float64): Expected maximum longitude.
+            Default is np.float64(179.75).
+            This is used to adjust the grid after resampling with xarray,
+            e.g. to align with population data.
+        new_min_lat (float | None): Minimum latitude of the new grid. Default is None.
+            This is used for resampling with xESMF and CDO.
+        new_max_lat (float | None): Maximum latitude of the new grid. Default is None.
+            This is used for resampling with xESMF.
+        new_min_lon (float | None): Minimum longitude of the new grid. Default is None.
+            This is used for resampling with xESMF and CDO.
+        new_max_lon (float | None): Maximum longitude of the new grid. Default is None.
+            This is used for resampling with xESMF.
+        new_lat_size (int | None): Size of latitude of the new grid. Default is None.
+            This is used for resampling with CDO.
+        new_lon_size (int | None): Size of longitude of the new grid. Default is None.
+            This is used for resampling with CDO.
+        gridtype (Literal["gaussian", "lonlat", "curvilinear", "unstructured"]):
+            Type of the grid. Default is "lonlat".
+            This is used for resampling with CDO.
+    """
+
+    expected_longitude_max_xarray: np.float64 = np.float64(179.75)
+    new_min_lat: float | None = None
+    new_max_lat: float | None = None
+    new_min_lon: float | None = None
+    new_max_lon: float | None = None
+    new_lat_size: int | None = None
+    new_lon_size: int | None = None
+    gridtype: Literal["gaussian", "lonlat", "curvilinear", "unstructured"] = "lonlat"
+
+
 def resample_resolution(
     dataset: xr.Dataset,
-    new_resolution: float = 0.5,
-    lat_name: str = "latitude",
-    lon_name: str = "longitude",
-    agg_funcs: Dict[str, str] | None = None,
-    expected_longitude_max: np.float64 = np.float64(179.75),
-    upsample_method_map: Dict[str, str] | None = None,
-    lib: Literal["xarray", "xesmf", "cdo"] = "xesmf",
-    new_min_lat: float | None = None,
-    new_max_lat: float | None = None,
-    new_min_lon: float | None = None,
-    new_max_lon: float | None = None,
-    new_lat_size: int | None = None,
-    new_lon_size: int | None = None,
-    gridtype: Literal["gaussian", "lonlat", "curvilinear", "unstructured"] = "lonlat",
+    resolution_config: ResolutionConfig = ResolutionConfig(),
+    grid_config: GridConfig = GridConfig(),
 ) -> xr.Dataset:
     """Resample the grid of a dataset to a new resolution.
 
     Args:
         dataset (xr.Dataset): Dataset to resample.
-        new_resolution (float): New resolution in degrees. Default is 0.5.
-        lat_name (str): Name of the latitude coordinate. Default is "latitude".
-        lon_name (str): Name of the longitude coordinate. Default is "longitude".
-        agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
-            If None, default aggregation (i.e. mean) is used. Default is None.
-        expected_longitude_max (np.float64): Expected maximum longitude
-            after adjustment. Default is np.float64(179.75).
-        upsample_method_map (Dict[str, str] | None): Mapping of variable names to
-            interpolation methods. If None, linear interpolation is used. Default is None.
-        lib (Literal["xarray", "xesmf", "cdo"]): Library to use for resampling.
-            Options are "xarray", "xesmf", or "cdo". Default is "xesmf".
-        new_min_lat (float | None): Minimum latitude of the new grid. Default is None.
-        new_max_lat (float | None): Maximum latitude of the new grid. Default is None.
-        new_min_lon (float | None): Minimum longitude of the new grid. Default is None.
-        new_max_lon (float | None): Maximum longitude of the new grid. Default is None.
-        new_lat_size (int | None): Size of latitude of the new grid. Default is None.
-        new_lon_size (int | None): Size of longitude of the new grid. Default is None.
-        gridtype (Literal["gaussian", "lonlat", "curvilinear", "unstructured"]):
-            Type of the grid. Default is "lonlat".
+        resolution_config (ResolutionConfig): Configuration for resolution resampling.
+        grid_config (GridConfig): Configuration for grid specification.
 
     Returns:
         xr.Dataset: Resampled dataset with changed resolution.
     """
+    new_resolution = resolution_config.new_resolution
+    lat_name = resolution_config.lat_name
+    lon_name = resolution_config.lon_name
+    downsample_lib = resolution_config.downsample_lib
+    agg_funcs = resolution_config.agg_funcs
+    upsample_method_map = resolution_config.upsample_method_map
+
+    expected_longitude_max = grid_config.expected_longitude_max_xarray
+    new_min_lat = grid_config.new_min_lat
+    new_max_lat = grid_config.new_max_lat
+    new_min_lon = grid_config.new_min_lon
+    new_max_lon = grid_config.new_max_lon
+    new_lat_size = grid_config.new_lat_size
+    new_lon_size = grid_config.new_lon_size
+    gridtype = grid_config.gridtype
+
     if lat_name not in dataset.coords or lon_name not in dataset.coords:
         raise ValueError(
             f"Coordinate names '{lat_name}' and '{lon_name}' are incorrect."
@@ -767,8 +815,8 @@ def resample_resolution(
     old_resolution = np.round((dataset[lon_name][1] - dataset[lon_name][0]).item(), 2)
 
     if new_resolution > old_resolution:
-        if lib == "xarray":
-            dataset = downsample_resolution(
+        if downsample_lib == "xarray":
+            dataset = downsample_resolution_with_xarray(
                 dataset,
                 new_resolution=new_resolution,
                 lat_name=lat_name,
@@ -781,7 +829,7 @@ def resample_resolution(
                 lat_name=lat_name,
                 lon_name=lon_name,
             )
-        elif lib == "xesmf":
+        elif downsample_lib == "xesmf":
             return downsample_resolution_with_xesmf(
                 dataset,
                 new_resolution=new_resolution,
@@ -793,7 +841,7 @@ def resample_resolution(
                 lon_name=lon_name,
                 agg_funcs=agg_funcs,
             )
-        elif lib == "cdo":
+        elif downsample_lib == "cdo":
             return downsample_resolution_with_cdo(
                 dataset,
                 new_resolution=new_resolution,
@@ -984,9 +1032,9 @@ def _apply_preprocessing(
     resample_agg_funcs = settings.get("resample_agg_funcs", None)
     resample_upsample_method_map = settings.get("resample_upsample_method_map", None)
     resample_expected_longitude_max = settings.get(
-        "resample_expected_longitude_max", np.float64(179.75)
+        "downsample_max_lon_xarray", np.float64(179.75)
     )
-    lib = settings.get("downsample_lib", "xesmf")
+    downsample_lib = settings.get("downsample_lib", "xesmf")
     new_min_lat = settings.get("downsample_new_min_lat", None)
     new_max_lat = settings.get("downsample_new_max_lat", None)
     new_min_lon = settings.get("downsample_new_min_lon", None)
@@ -1036,20 +1084,24 @@ def _apply_preprocessing(
         print("Resampling grid to a new resolution...")
         dataset = resample_resolution(
             dataset,
-            new_resolution=resample_degree,
-            lat_name=lat_name,
-            lon_name=lon_name,
-            agg_funcs=resample_agg_funcs,
-            expected_longitude_max=resample_expected_longitude_max,
-            upsample_method_map=resample_upsample_method_map,
-            lib=lib,
-            new_min_lat=new_min_lat,
-            new_max_lat=new_max_lat,
-            new_min_lon=new_min_lon,
-            new_max_lon=new_max_lon,
-            new_lat_size=new_lat_size,
-            new_lon_size=new_lon_size,
-            gridtype=gridtype,
+            resolution_config=ResolutionConfig(
+                new_resolution=resample_degree,
+                lat_name=lat_name,
+                lon_name=lon_name,
+                downsample_lib=downsample_lib,
+                agg_funcs=resample_agg_funcs,
+                upsample_method_map=resample_upsample_method_map,
+            ),
+            grid_config=GridConfig(
+                expected_longitude_max_xarray=resample_expected_longitude_max,
+                new_min_lat=new_min_lat,
+                new_max_lat=new_max_lat,
+                new_min_lon=new_min_lon,
+                new_max_lon=new_max_lon,
+                new_lat_size=new_lat_size,
+                new_lon_size=new_lon_size,
+                gridtype=gridtype,
+            ),
         )
         degree_str = _replace_decimal_point(resample_degree)
         file_name_base += f"_{degree_str}{resample_grid_fname}"
