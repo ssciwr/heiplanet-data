@@ -397,6 +397,7 @@ def test_check_agg_funcs():
         preprocess.check_agg_funcs(
             agg_funcs={"t2m": "invalid"}, valid_agg_funcs={"mean"}
         )
+    assert preprocess.check_agg_funcs(agg_funcs=None, valid_agg_funcs={"mean"}) is None
 
 
 def test_downsample_resolution_with_xarray_default(get_dataset):
@@ -457,15 +458,6 @@ def test_downsample_resolution_with_xarray_custom(get_dataset):
     assert downsampled_dataset.attrs == get_dataset.attrs
     for var in downsampled_dataset.data_vars.keys():
         assert downsampled_dataset[var].attrs == get_dataset[var].attrs
-
-    # custom agg map and agg funcs with missing variable
-    downsampled_dataset = preprocess.downsample_resolution_with_xarray(
-        get_dataset, new_resolution=1.0, agg_funcs={"t2m": "mean"}
-    )  # tp will also use mean
-    assert np.allclose(
-        downsampled_dataset["tp"].values.flatten(),
-        np.mean(get_dataset["tp"][:, :, :2], axis=(1, 2)),
-    )
 
 
 def test_downsample_resolution_with_xarray_missing_agg_func(get_dataset):

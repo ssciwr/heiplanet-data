@@ -285,6 +285,9 @@ def check_agg_funcs(agg_funcs: Dict[str, str], valid_agg_funcs: set) -> None:
     Raises:
         ValueError: If any aggregation function is not valid or agg_funcs is not a dictionary.
     """
+    if agg_funcs is None:
+        return
+
     if not agg_funcs or not isinstance(agg_funcs, dict):
         raise ValueError(
             "agg_funcs must be a dictionary of variable names and aggregation function names."
@@ -325,8 +328,7 @@ def downsample_resolution_with_xarray(
     """
     # check aggregation functions
     valid_agg_funcs = {"mean", "sum", "max", "min"}
-    if agg_funcs is not None:
-        check_agg_funcs(agg_funcs, valid_agg_funcs)
+    check_agg_funcs(agg_funcs, valid_agg_funcs)
 
     old_resolution = check_downsample_condition(
         dataset,
@@ -474,8 +476,7 @@ def downsample_resolution_with_xesmf(
         "nearest_s2d",
         "nearest_d2s",
     }
-    if agg_funcs is not None:
-        check_agg_funcs(agg_funcs, valid_agg_funcs)
+    check_agg_funcs(agg_funcs, valid_agg_funcs)
 
     old_res = check_downsample_condition(
         dataset,
@@ -559,9 +560,7 @@ def downsample_resolution_with_xesmf(
             )
 
     # avoid creating duplicate regridders
-    unique_funcs = set(agg_funcs.values()).union(
-        set(["bilinear"])
-    )  # default aggregation
+    unique_funcs = set(agg_funcs.values()).union({"bilinear"})  # default aggregation
     regridder_dict = {}
     regridder_var_dict = {}
     for func in unique_funcs:
@@ -645,8 +644,7 @@ def downsample_resolution_with_cdo(
 
     # check aggregation functions
     valid_agg_funcs = {"nn", "bil", "bic", "con", "con2"}
-    if agg_funcs is not None:
-        check_agg_funcs(agg_funcs, valid_agg_funcs)
+    check_agg_funcs(agg_funcs, valid_agg_funcs)
 
     # prepare new grid parameters
     new_min_lat = _get_min_value(new_min_lat, dataset[lat_name])
