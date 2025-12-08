@@ -275,6 +275,29 @@ def check_downsample_condition(
     return old_resolution
 
 
+def check_agg_funcs(agg_funcs: Dict[str, str], valid_agg_funcs: set) -> None:
+    """Check if aggregation functions are valid.
+
+    Args:
+        agg_funcs (Dict[str, str]): Aggregation functions for each variable.
+        valid_agg_funcs (set): Set of valid aggregation function names.
+
+    Raises:
+        ValueError: If any aggregation function is not valid or agg_funcs is not a dictionary.
+    """
+    if not agg_funcs or not isinstance(agg_funcs, dict):
+        raise ValueError(
+            "agg_funcs must be a dictionary of variable names and aggregation function names."
+        )
+
+    invalid_funcs = set(agg_funcs.values()) - valid_agg_funcs
+    if invalid_funcs:
+        raise ValueError(
+            f"Aggregation functions '{invalid_funcs}' are not valid. "
+            f"Valid options are: {valid_agg_funcs}."
+        )
+
+
 def downsample_resolution_with_xarray(
     dataset: xr.Dataset,
     new_resolution: float = 0.5,
@@ -291,10 +314,20 @@ def downsample_resolution_with_xarray(
         lon_name (str): Name of the longitude coordinate. Default is "longitude".
         agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
             If None, default aggregation (i.e. mean) is used. Default is None.
+            Possible keys are:
+                * `mean`
+                * `sum`
+                * `max`
+                * `min`
 
     Returns:
         xr.Dataset: Dataset with changed resolution.
     """
+    # check aggregation functions
+    valid_agg_funcs = {"mean", "sum", "max", "min"}
+    if agg_funcs is not None:
+        check_agg_funcs(agg_funcs, valid_agg_funcs)
+
     old_resolution = check_downsample_condition(
         dataset,
         new_resolution,
@@ -314,7 +347,14 @@ def downsample_resolution_with_xarray(
 
     result = {}
     for var in dataset.data_vars:
-        func_str = agg_funcs.get(var, "mean")
+        func_str = agg_funcs.get(var, None)
+
+        if func_str is None:
+            warnings.warn(
+                f"No aggregation function found for variable '{var}'. Using mean.",
+                UserWarning,
+            )
+            func_str = "mean"
 
         # apply coarsening and reduction per variable
         result[var] = (
@@ -408,12 +448,34 @@ def downsample_resolution_with_xesmf(
         lon_name (str): Name of the longitude coordinate. Default is "longitude".
         agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
             If None, default aggregation is used, i.e. `bilinear` for all variables.
+            Possible keys are:
+                * `bilinear`
+                * `conservative`, need grid corner information
+                * `conservative_normed`, need grid corner information
+                * `patch`
+                * `nearest_s2d`
+                * `nearest_d2s`
+
+    Returns:
+        xr.Dataset: Dataset with changed resolution.
     """
 
     def _get_default_values(val: float | None, arr: xr.DataArray, func: str) -> float:
         # using item() instead of values is also possible,
         # but only works if the result of func is a single value
         return getattr(arr, func)().values if val is None else val
+
+    # check aggregation functions
+    valid_agg_funcs = {
+        "bilinear",
+        "conservative",
+        "conservative_normed",
+        "patch",
+        "nearest_s2d",
+        "nearest_d2s",
+    }
+    if agg_funcs is not None:
+        check_agg_funcs(agg_funcs, valid_agg_funcs)
 
     old_res = check_downsample_condition(
         dataset,
@@ -445,7 +507,7 @@ def downsample_resolution_with_xesmf(
 
     # TODO: check this again!
     # create grid corners for conservative regridding
-    if "conservative" in agg_funcs.values():
+    if {"conservative", "conservative_normed"} & set(agg_funcs.values()):
         if "lat_b" not in dataset.coords or "lon_b" not in dataset.coords:
             old_lat = dataset[lat_name].values
             old_lon = dataset[lon_name].values
@@ -497,7 +559,9 @@ def downsample_resolution_with_xesmf(
             )
 
     # avoid creating duplicate regridders
-    unique_funcs = set(agg_funcs.values())
+    unique_funcs = set(agg_funcs.values()).union(
+        set(["bilinear"])
+    )  # default aggregation
     regridder_dict = {}
     regridder_var_dict = {}
     for func in unique_funcs:
@@ -509,9 +573,15 @@ def downsample_resolution_with_xesmf(
     # apply regridders to data variables
     result = {}
     for var in dataset.data_vars:
-        if var in regridder_var_dict:
-            result[var] = regridder_var_dict[var](dataset[var], keep_attrs=True)
+        regridder_func = regridder_var_dict.get(var, None)
+        if regridder_func is None:
+            warnings.warn(
+                f"No aggregation function found for variable '{var}'. Using bilinear.",
+                UserWarning,
+            )
+            regridder_func = regridder_dict["bilinear"]  # default aggregation
 
+        result[var] = regridder_func(dataset[var], keep_attrs=True)
     # create a new dataset with the regridded variables
     result_dataset = xr.Dataset(result)
     result_dataset.attrs = dataset.attrs.copy()
@@ -544,13 +614,17 @@ def downsample_resolution_with_cdo(
         lon_name (str): Name of the longitude coordinate. Default is "longitude".
         agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
             If None, default aggregation is used, i.e. `bil` (bilinear). Default is None.
-            Possible keys are: `nn` (nearest neighbor),
-                                `bil` (bilinear),
-                                `bic` (bicubic),
-                                `con` (conservative),
-                                `con2` (conservative 2nd order).
+            Possible keys are:
+                * `nn` (nearest neighbor),
+                * `bil` (bilinear),
+                * `bic` (bicubic),
+                * `con` (conservative),
+                * `con2` (conservative 2nd order).
         gridtype (Literal["gaussian", "lonlat", "curvilinear", "unstructured"]):
             Type of the grid. Default is "lonlat".
+
+    Returns:
+        xr.Dataset: Dataset with changed resolution.
     """
 
     # helper functions
@@ -568,6 +642,11 @@ def downsample_resolution_with_cdo(
         lat_name=lat_name,
         lon_name=lon_name,
     )
+
+    # check aggregation functions
+    valid_agg_funcs = {"nn", "bil", "bic", "con", "con2"}
+    if agg_funcs is not None:
+        check_agg_funcs(agg_funcs, valid_agg_funcs)
 
     # prepare new grid parameters
     new_min_lat = _get_min_value(new_min_lat, dataset[lat_name])
@@ -618,16 +697,28 @@ def downsample_resolution_with_cdo(
     tmp_dss = {}
     cdo = Cdo()
     for var, tmp_file_name in ds_tmp_files.items():
-        agg_func = agg_funcs.get(var, "bil")
-        tmp_ds = getattr(cdo, f"remap{agg_func}")(
-            gridspec_file_name,
-            input=tmp_file_name,
-            returnXDataset=True,
-        )
-        tmp_dss[var] = tmp_ds
+        agg_func = agg_funcs.get(var, None)
+        if agg_func is None:
+            warnings.warn(
+                f"No aggregation function found for variable '{var}'. Using bilinear.",
+                UserWarning,
+            )
+            agg_func = "bil"
 
-        # remove temporary variable file
-        Path(tmp_file_name).unlink()
+        try:
+            tmp_ds = getattr(cdo, f"remap{agg_func}")(
+                gridspec_file_name,
+                input=tmp_file_name,
+                returnXDataset=True,
+            )
+            tmp_dss[var] = tmp_ds
+        except Exception as e:
+            raise RuntimeError(
+                f"CDO remapping failed for variable '{var}' with error: {e}"
+            ) from e
+        finally:
+            # remove temporary variable file
+            Path(tmp_file_name).unlink()
 
     # remove temporary gridspec file
     Path(gridspec_file_name).unlink()

@@ -388,6 +388,17 @@ def test_check_downsample_condition(get_dataset):
         )
 
 
+def test_check_agg_funcs():
+    with pytest.raises(ValueError):
+        preprocess.check_agg_funcs(agg_funcs="invalid", valid_agg_funcs={"mean"})
+    with pytest.raises(ValueError):
+        preprocess.check_agg_funcs(agg_funcs={}, valid_agg_funcs={"mean"})
+    with pytest.raises(ValueError):
+        preprocess.check_agg_funcs(
+            agg_funcs={"t2m": "invalid"}, valid_agg_funcs={"mean"}
+        )
+
+
 def test_downsample_resolution_with_xarray_default(get_dataset):
     # downsample resolution
     downsampled_dataset = preprocess.downsample_resolution_with_xarray(
@@ -454,6 +465,22 @@ def test_downsample_resolution_with_xarray_custom(get_dataset):
     assert np.allclose(
         downsampled_dataset["tp"].values.flatten(),
         np.mean(get_dataset["tp"][:, :, :2], axis=(1, 2)),
+    )
+
+
+def test_downsample_resolution_with_xarray_missing_agg_func(get_dataset):
+    # downsample resolution with missing aggregation functions
+    with pytest.warns(UserWarning):
+        downsampled_dataset = preprocess.downsample_resolution_with_xarray(
+            get_dataset,
+            new_resolution=1.0,
+            agg_funcs={"tp": "sum"},  # t2m will use mean
+        )
+
+    # check agg. values
+    assert np.allclose(
+        downsampled_dataset["t2m"].values.flatten(),
+        np.mean(get_dataset["t2m"][:, :, :2], axis=(1, 2)),
     )
 
 
@@ -540,6 +567,33 @@ def test_downsample_resolution_with_xesmf_custom(get_dataset):
     assert np.allclose(
         downsampled_dataset["tp"].values.flatten(), out_ds["tp"].values.flatten()
     )
+
+
+def test_downsample_resolution_with_xesmf_missing_agg_func(get_dataset):
+    # modify lat lon of the original dataset
+    get_dataset = get_dataset.assign_coords(
+        latitude=("latitude", [0.0, 0.5]),
+        longitude=("longitude", [0.0, 0.5, 1.0]),
+    )
+    # downsample resolution with xesmf
+    with pytest.warns(UserWarning):
+        downsampled_dataset = preprocess.downsample_resolution_with_xesmf(
+            get_dataset,
+            new_resolution=1.0,
+            new_min_lat=0.0,
+            new_max_lat=0.5,
+            new_min_lon=0.0,
+            new_max_lon=1.0,
+            lat_name="latitude",
+            lon_name="longitude",
+            agg_funcs={"tp": "conservative"},  # t2m will use bilinear
+        )
+
+    # bilinear check
+    t2m_old = get_dataset.t2m.values
+    t2m_new = downsampled_dataset.t2m.values
+    assert np.nanmin(t2m_new) >= np.nanmin(t2m_old) - 1e-6
+    assert np.nanmax(t2m_new) <= np.nanmax(t2m_old) + 1e-6
 
 
 def test_downsample_resolution_with_xesmf_default(get_dataset):
@@ -661,6 +715,28 @@ def test_downsample_resolution_with_cdo_custom(get_dataset):
         downsampled_dataset["t2m"].values.flatten(),
         get_dataset["t2m"][:, 1, [0, 2]].values.flatten(),
     )
+
+
+def test_downsample_resolution_with_cdo_missing_agg_func(get_dataset):
+    with pytest.warns(UserWarning):
+        downsampled_dataset = preprocess.downsample_resolution_with_cdo(
+            get_dataset,
+            new_resolution=1.0,
+            new_min_lat=None,
+            new_lat_size=None,
+            new_min_lon=None,
+            new_lon_size=None,
+            lat_name="latitude",
+            lon_name="longitude",
+            agg_funcs={"tp": "nn"},  # t2m will also use nn
+            gridtype="lonlat",
+        )
+
+    # bilinear check
+    t2m_old = get_dataset.t2m.values
+    t2m_new = downsampled_dataset.t2m.values
+    assert np.nanmin(t2m_new) >= np.nanmin(t2m_old) - 1e-6
+    assert np.nanmax(t2m_new) <= np.nanmax(t2m_old) + 1e-6
 
 
 def test_align_lon_lat_with_popu_data_invalid(get_dataset):
@@ -847,11 +923,11 @@ def test_resample_resolution(get_dataset):
         ),
     )
     # bilinear check
-    t2m_old = get_dataset.tp.values
-    t2m_new = resampled_dataset_xesmf.tp.values
+    tp_old = get_dataset.tp.values
+    tp_new = resampled_dataset_xesmf.tp.values
     # bilinear check
-    assert np.nanmin(t2m_new) >= np.nanmin(t2m_old) - 1e-6
-    assert np.nanmax(t2m_new) <= np.nanmax(t2m_old) + 1e-6
+    assert np.nanmin(tp_new) >= np.nanmin(tp_old) - 1e-6
+    assert np.nanmax(tp_new) <= np.nanmax(tp_old) + 1e-6
 
     # downsample resolution with cdo
     resampled_dataset_cdo = preprocess.resample_resolution(
