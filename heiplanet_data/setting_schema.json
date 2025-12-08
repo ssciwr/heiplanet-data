@@ -75,6 +75,65 @@
             "default": "deg_trim",
             "description": "Suffix of file names after resampling the grid."
         },
+        "resample_agg_funcs": {
+            "type": "object",
+            "patternProperties": {
+                "^.*$": {
+                    "type": "string"
+                }
+            },
+            "description": "Aggregation functions for each variable during resampling."
+        },
+        "resample_upsample_method_map": {
+            "type": "object",
+            "patternProperties": {
+                "^.*$": {
+                    "type": "string"
+                }
+            },
+            "description": "Upsampling methods for each variable during resampling."
+        },
+        "downsample_max_lon_xarray": {
+            "type": "number",
+            "default": 179.75,
+            "description": "Expected maximum longitude value after resampling with xarray to match population data."
+        },
+        "downsample_lib": {
+            "type": "string",
+            "enum": ["xarray", "xesmf", "cdo"],
+            "default": "xesmf",
+            "description": "Library to use for downsampling. Options are 'xarray', 'xesmf', or 'cdo'."
+        },
+        "downsample_new_min_lat": {
+            "type": "number",
+            "description": "Minimum latitude of the new grid."
+        },
+        "downsample_new_max_lat": {
+            "type": "number",
+            "description": "Maximum latitude of the new grid."
+        },
+        "downsample_new_min_lon": {
+            "type": "number",
+            "description": "Minimum longitude of the new grid."
+        },
+        "downsample_new_max_lon": {
+            "type": "number",
+            "description": "Maximum longitude of the new grid."
+        },
+        "downsample_new_lat_size": {
+            "type": "integer",
+            "description": "Number of latitude points in the new grid."
+        },
+        "downsample_new_lon_size": {
+            "type": "integer",
+            "description": "Number of longitude points in the new grid."
+        },
+        "downsample_gridtype": {
+            "type": "string",
+            "enum": ["gaussian", "lonlat", "curvilinear", "unstructured"],
+            "default": "lonlat",
+            "description": "Type of the grid for downsampling with CDO."
+        },
         "truncate_date": {
             "type": "boolean",
             "default": true,
