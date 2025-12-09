@@ -8,3 +8,4 @@ geopandas
 dask[complete]
 scipy
 isimip-client
+xagg

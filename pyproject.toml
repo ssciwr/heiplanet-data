@@ -28,7 +28,8 @@ dependencies = [
   "geopandas",
   "dask[complete]",
   "scipy",
-  "isimip-client"
+  "isimip-client",
+  "xagg",
 ]
 
 [project.optional-dependencies]
