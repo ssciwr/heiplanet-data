@@ -110,6 +110,14 @@ def test_is_valid_settings():
         "resample_grid_fname": "test",
     }
     assert utils.is_valid_settings(settings) is False
+    settings = {
+        "resample_grid": True,
+        "resample_degree": 1.0,
+        "resample_grid_vname": ["test1", "test2"],
+        "resample_grid_fname": "test",
+        "downsample_lib": "xesmf",
+    }
+    assert utils.is_valid_settings(settings) is True
 
     settings = {"truncate_date": False}
     assert utils.is_valid_settings(settings) is True
