@@ -731,6 +731,30 @@ def test_downsample_resolution_with_cdo_missing_agg_func(get_dataset):
     assert np.nanmax(t2m_new) <= np.nanmax(t2m_old) + 1e-6
 
 
+def test_downsample_resolution_with_cdo_runtimeerror(get_dataset, monkeypatch):
+    class FakeCdo:
+        def remapbil(self, *args, **kwargs):
+            raise RuntimeError("CDO remapbil failed")
+
+    monkeypatch.setattr("heiplanet_data.preprocess.Cdo", FakeCdo)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        preprocess.downsample_resolution_with_cdo(
+            get_dataset,
+            new_resolution=1.0,
+            new_min_lat=None,
+            new_lat_size=None,
+            new_min_lon=None,
+            new_lon_size=None,
+            lat_name="latitude",
+            lon_name="longitude",
+            agg_funcs=None,
+            gridtype="lonlat",
+        )
+
+    assert "CDO remapbil failed" in str(excinfo.value)
+
+
 def test_align_lon_lat_with_popu_data_invalid(get_dataset):
     with pytest.raises(ValueError):
         preprocess.align_lon_lat_with_popu_data(get_dataset, lat_name="invalid_lat")
