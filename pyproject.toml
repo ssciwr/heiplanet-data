@@ -30,6 +30,8 @@ dependencies = [
   "scipy",
   "isimip-client",
   "xagg",
+  "xesmf",
+  "cdo",
 ]
 
 [project.optional-dependencies]
