@@ -881,7 +881,9 @@ def test_resample_resolution_invalid(get_dataset):
         resolution_config = preprocess.ResolutionConfig(lon_name="invalid_lon")
         preprocess.resample_resolution(get_dataset, resolution_config=resolution_config)
     with pytest.raises(ValueError):
-        resolution_config = preprocess.ResolutionConfig(downsample_lib="invalid_lib")
+        resolution_config = preprocess.ResolutionConfig(
+            new_resolution=1.0, downsample_lib="invalid_lib"
+        )
         preprocess.resample_resolution(get_dataset, resolution_config=resolution_config)
 
 
