@@ -8,6 +8,7 @@ geopandas
 dask[complete]
 scipy
 isimip-client
-xagg
 xesmf
 cdo
+xagg
+exactextract

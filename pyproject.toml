@@ -29,9 +29,10 @@ dependencies = [
   "dask[complete]",
   "scipy",
   "isimip-client",
-  "xagg",
   "xesmf",
   "cdo",
+  "xagg",
+  "exactextract",
 ]
 
 [project.optional-dependencies]
