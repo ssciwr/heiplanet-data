@@ -12,3 +12,4 @@ xesmf
 cdo
 xagg
 exactextract
+rioxarray
