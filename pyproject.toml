@@ -31,6 +31,9 @@ dependencies = [
   "isimip-client",
   "xesmf",
   "cdo",
+  "xagg",
+  "exactextract",
+  "rioxarray",
 ]
 
 [project.optional-dependencies]
