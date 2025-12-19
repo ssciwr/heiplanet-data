@@ -11,6 +11,7 @@ from datetime import datetime
 import xesmf as xe
 from cdo import Cdo
 import textwrap
+import pandas as pd
 
 
 @pytest.fixture()
@@ -1531,27 +1532,90 @@ def test_preprocess_data_file_diff_outdir(
     (Path(tmpdir) / "data" / "processed").rmdir()
 
 
-def test_aggregate_netcdf_nuts_invalid(tmp_path, get_dataset, get_nuts_data):
+def test_prepare_for_aggregation_normalize(get_dataset):
+    # change time to mid-day
+    get_dataset["time"] = get_dataset["time"] + np.timedelta64(12, "h")
+
+    # prepare data without time normalization
+    ds, _ = preprocess._prepare_for_aggregation(
+        get_dataset, normalize_time=False, agg_dict=None
+    )
+    assert np.unique(ds.time.dt.hour).tolist() == [12]
+
+    # prepare data with time normalization
+    ds, _ = preprocess._prepare_for_aggregation(
+        get_dataset, normalize_time=True, agg_dict=None
+    )
+    assert np.unique(ds.time.dt.hour).tolist() == [0]
+
+
+def test_prepare_for_aggregation_agg_dict(get_dataset):
+    # None case
+    ds, p_agg_dict = preprocess._prepare_for_aggregation(
+        get_dataset, normalize_time=False, agg_dict=None
+    )
+    expected_agg_dict = {
+        "t2m": "mean",
+        "tp": "mean",
+    }
+    assert p_agg_dict == expected_agg_dict
+
+    # custom aggregation dictionary
+    o_agg_dict = {
+        "t2m": "mean",
+        "tp": "sum",
+    }
+    ds, p_agg_dict = preprocess._prepare_for_aggregation(
+        get_dataset, normalize_time=False, agg_dict=o_agg_dict
+    )
+    assert p_agg_dict == o_agg_dict
+
+    # invalid cases
+    with pytest.warns(UserWarning):
+        ds, p_agg_dict = preprocess._prepare_for_aggregation(
+            get_dataset, normalize_time=False, agg_dict={"t2m": 1}
+        )
+    assert p_agg_dict == expected_agg_dict
+    with pytest.warns(UserWarning):
+        ds, p_agg_dict = preprocess._prepare_for_aggregation(
+            get_dataset, normalize_time=False, agg_dict="something"
+        )
+    assert p_agg_dict == expected_agg_dict
+    with pytest.warns(UserWarning):
+        ds, p_agg_dict = preprocess._prepare_for_aggregation(
+            get_dataset, normalize_time=False, agg_dict={}
+        )
+    assert p_agg_dict == expected_agg_dict
+    with pytest.warns(UserWarning):
+        ds, p_agg_dict = preprocess._prepare_for_aggregation(
+            get_dataset, normalize_time=False, agg_dict={"invalid_key": "mean"}
+        )
+    assert p_agg_dict == expected_agg_dict
+
+
+def test_aggregate_netcdf_nuts_gpd_invalid(tmp_path, get_dataset, get_nuts_data):
     file_path = tmp_path / "test_data.nc"
     # change coordinates to invalid names
     get_dataset = get_dataset.rename({"latitude": "lat", "longitude": "lon"})
     get_dataset.to_netcdf(file_path)
 
     with pytest.raises(ValueError):
-        preprocess._aggregate_netcdf_nuts(
+        preprocess._aggregate_netcdf_nuts_gpd(
             get_nuts_data, file_path, agg_dict=None, normalize_time=False
         )
 
 
-def test_aggregate_netcdf_nuts_normalize(tmp_path, get_dataset, get_nuts_data):
+def test_aggregate_netcdf_nuts_gpd_normalize_none_aggdict(
+    tmp_path, get_dataset, get_nuts_data
+):
     file_path = tmp_path / "test_data.nc"
     # change time to mid-day
     get_dataset["time"] = get_dataset["time"] + np.timedelta64(12, "h")
     get_dataset.to_netcdf(file_path)
 
     # aggregate data without time normalization
-    out_data, var_names = preprocess._aggregate_netcdf_nuts(
-        get_nuts_data, file_path, agg_dict=None, normalize_time=False
+    out_data, var_names = preprocess._aggregate_netcdf_nuts_gpd(
+        get_nuts_data, file_path, agg_dict=None, normalize_time=True
     )
 
     assert "NUTS_ID" in out_data.columns
@@ -1561,9 +1625,7 @@ def test_aggregate_netcdf_nuts_normalize(tmp_path, get_dataset, get_nuts_data):
     assert "latitude" not in out_data.columns
     assert var_names == ["t2m", "tp"]
     assert len(out_data) == 4  # two NUTS regions with two time points each
-    assert out_data["time"].dt.hour.unique().tolist() == [
-        12
-    ]  # check if time is mid-day
+    assert out_data["time"].dt.hour.unique().tolist() == [0]  # check if time is mid-day
     assert np.isclose(
         out_data.iloc[0]["t2m"], get_dataset["t2m"].values[0, :, 0].mean()
     )
@@ -1572,21 +1634,10 @@ def test_aggregate_netcdf_nuts_normalize(tmp_path, get_dataset, get_nuts_data):
         out_data.iloc[2]["t2m"], get_dataset["t2m"].values[0, :, 1:].mean()
     )
 
-    # aggregate data with time normalization
-    out_data, _ = preprocess._aggregate_netcdf_nuts(
-        get_nuts_data, file_path, agg_dict=None, normalize_time=True
-    )
 
-    assert "NUTS_ID" in out_data.columns
-    assert out_data["time"].dt.hour.unique().tolist() == [
-        0
-    ]  # check if time is normalized to midnight
-    assert np.isclose(
-        out_data.iloc[0]["t2m"], get_dataset["t2m"].values[0, :, 0].mean()
-    )
-
-
-def test_aggregate_netcdf_nuts_agg_dict(tmp_path, get_dataset, get_nuts_data):
+def test_aggregate_netcdf_nuts_gpd_custom_agg_dict(
+    tmp_path, get_dataset, get_nuts_data
+):
     file_path = tmp_path / "test_data.nc"
     get_dataset.to_netcdf(file_path)
 
@@ -1595,7 +1646,7 @@ def test_aggregate_netcdf_nuts_agg_dict(tmp_path, get_dataset, get_nuts_data):
         "t2m": "mean",
         "tp": "sum",
     }
-    out_data, _ = preprocess._aggregate_netcdf_nuts(
+    out_data, _ = preprocess._aggregate_netcdf_nuts_gpd(
         get_nuts_data, file_path, agg_dict=agg_dict, normalize_time=False
     )
 
@@ -1605,35 +1656,93 @@ def test_aggregate_netcdf_nuts_agg_dict(tmp_path, get_dataset, get_nuts_data):
     )
     assert np.isclose(out_data.iloc[0]["tp"], get_dataset["tp"].values[0, :, 0].sum())
 
-    # invalid cases
-    with pytest.warns(UserWarning):
-        out_data, _ = preprocess._aggregate_netcdf_nuts(
-            get_nuts_data, file_path, agg_dict={"t2m": 1}, normalize_time=False
+
+def test_aggregate_netcdf_nuts_gpd_too_large_ds(tmp_path, get_nuts_data):
+    file_path = tmp_path / "large_test_data.nc"
+    # create a large dataset
+    # with 12 monthly data for 1 year, global 0.1 degree grid
+    time = pd.date_range("2025-01-01", periods=12, freq="ME")
+    lat = np.arange(-90.0, 90.1, 0.1)
+    lon = np.arange(-180.0, 180.1, 0.1)
+    data = xr.DataArray(
+        np.random.rand(len(time), len(lat), len(lon)),
+        coords=[time, lat, lon],
+        dims=["time", "latitude", "longitude"],
+    )
+    large_dataset = xr.Dataset({"large_var": data})
+    large_dataset.to_netcdf(file_path)
+
+    with pytest.raises(ValueError):
+        preprocess._aggregate_netcdf_nuts_gpd(
+            get_nuts_data, file_path, agg_dict=None, normalize_time=False
         )
+
+
+def test_aggregate_netcdf_nuts_ee_invalid(tmp_path, get_dataset, get_nuts_data):
+    file_path = tmp_path / "test_data.nc"
+    # change coordinates to invalid names
+    get_dataset = get_dataset.rename({"latitude": "lat", "longitude": "lon"})
+    get_dataset.to_netcdf(file_path)
+
+    with pytest.raises(ValueError):
+        preprocess._aggregate_netcdf_nuts_ee(
+            get_nuts_data, file_path, agg_dict=None, normalize_time=False
+        )
+
+
+def test_aggregate_netcdf_nuts_ee_normalize_none_aggdict(
+    tmp_path, get_dataset, get_nuts_data
+):
+    file_path = tmp_path / "test_data.nc"
+    # change time to mid-day
+    get_dataset["time"] = get_dataset["time"] + np.timedelta64(12, "h")
+    get_dataset.to_netcdf(file_path)
+
+    # aggregate data without time normalization
+    out_data, var_names = preprocess._aggregate_netcdf_nuts_ee(
+        get_nuts_data, file_path, agg_dict=None, normalize_time=True
+    )
+
+    assert "NUTS_ID" in out_data.columns
+    assert "time" in out_data.columns
+    assert "t2m" in out_data.columns
+    assert "tp" in out_data.columns
+    assert "latitude" not in out_data.columns
+    assert var_names == ["t2m", "tp"]
+    assert len(out_data) == 4  # two NUTS regions with two time points each
+    assert out_data["time"].dt.hour.unique().tolist() == [0]  # check if time is mid-day
+
+    # sort by NUTS_ID and time
+    # since the order is different from geopandas aggregation
+    out_data = out_data.sort_values(by=["NUTS_ID", "time"]).reset_index(drop=True)
+
     assert np.isclose(
         out_data.iloc[0]["t2m"], get_dataset["t2m"].values[0, :, 0].mean()
     )
+    assert np.isclose(out_data.iloc[0]["tp"], get_dataset["tp"].values[0, :, 0].mean())
+    assert np.isclose(
+        out_data.iloc[2]["t2m"], get_dataset["t2m"].values[0, :, 1:].mean()
+    )
 
-    with pytest.warns(UserWarning):
-        _, _ = preprocess._aggregate_netcdf_nuts(
-            get_nuts_data, file_path, agg_dict="something", normalize_time=False
-        )
-    assert "time" in out_data.columns
 
-    with pytest.warns(UserWarning):
-        _, _ = preprocess._aggregate_netcdf_nuts(
-            get_nuts_data, file_path, agg_dict={}, normalize_time=False
-        )
-    assert "t2m" in out_data.columns
+def test_aggregate_netcdf_nuts_ee_custom_agg_dict(tmp_path, get_dataset, get_nuts_data):
+    file_path = tmp_path / "test_data.nc"
+    get_dataset.to_netcdf(file_path)
 
-    with pytest.warns(UserWarning):
-        _, _ = preprocess._aggregate_netcdf_nuts(
-            get_nuts_data,
-            file_path,
-            agg_dict={"invalid_key": "mean"},
-            normalize_time=False,
-        )
-    assert "tp" in out_data.columns
+    # aggregate data with custom aggregation dictionary
+    agg_dict = {
+        "t2m": "mean",
+        "tp": "sum",
+    }
+    out_data, _ = preprocess._aggregate_netcdf_nuts_ee(
+        get_nuts_data, file_path, agg_dict=agg_dict, normalize_time=False
+    )
+
+    assert "NUTS_ID" in out_data.columns
+    assert np.isclose(
+        out_data.iloc[0]["t2m"], get_dataset["t2m"].values[0, :, 0].mean()
+    )
+    assert np.isclose(out_data.iloc[0]["tp"], get_dataset["tp"].values[0, :, 0].sum())
 
 
 def test_aggregate_data_by_nuts_invalid(tmp_path):
@@ -1679,8 +1788,24 @@ def test_aggregate_data_by_nuts_invalid(tmp_path):
             {"era5": (nc_file, None)}, tmp_path / "nuts.shp"
         )
 
+    # invalid aggregation lib
+    data = {
+        "NUTS_ID": ["ID1", "ID2"],
+        "nuts_name": ["name1", "name2"],
+        "geometry": [None, None],
+    }
+    nuts_data = gpd.GeoDataFrame(data, crs="EPSG:4326")
+    nuts_data.to_file(tmp_path / "nuts.shp")
+    with pytest.raises(ValueError):
+        preprocess.aggregate_data_by_nuts(
+            {"era5": (nc_file, None)},
+            tmp_path / "nuts.shp",
+            agg_lib="invalid_lib",
+        )
 
-def test_aggregate_data_by_nuts(tmp_path, get_dataset, get_nuts_data, tmpdir):
+
+@pytest.mark.parametrize("agg_lib", ["geopandas", "exactextract"])
+def test_aggregate_data_by_nuts(tmp_path, get_dataset, get_nuts_data, tmpdir, agg_lib):
     out_dir = Path(tmpdir) / "output"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1697,6 +1822,7 @@ def test_aggregate_data_by_nuts(tmp_path, get_dataset, get_nuts_data, tmpdir):
         tmp_path / "nuts.shp",
         normalize_time=True,
         output_dir=out_dir,
+        agg_lib=agg_lib,
     )
 
     # check if the output file is created
@@ -1719,7 +1845,8 @@ def test_aggregate_data_by_nuts(tmp_path, get_dataset, get_nuts_data, tmpdir):
     out_dir.rmdir()  # remove the output directory after test
 
 
-def test_aggregate_data_by_nuts_outdir(tmp_path, get_dataset, get_nuts_data):
+@pytest.mark.parametrize("agg_lib", ["geopandas", "exactextract"])
+def test_aggregate_data_by_nuts_outdir(tmp_path, get_dataset, get_nuts_data, agg_lib):
     # save dataset to a temporary file
     file_path = tmp_path / "test_data.nc"
     get_dataset.to_netcdf(file_path)
@@ -1734,6 +1861,7 @@ def test_aggregate_data_by_nuts_outdir(tmp_path, get_dataset, get_nuts_data):
         nuts_file,
         normalize_time=True,
         output_dir=None,
+        agg_lib=agg_lib,
     )
 
     # check if the output file is created in folder of nuts file
@@ -1748,8 +1876,9 @@ def test_aggregate_data_by_nuts_outdir(tmp_path, get_dataset, get_nuts_data):
     out_dir.rmdir()  # remove the output directory after test
 
 
+@pytest.mark.parametrize("agg_lib", ["geopandas", "exactextract"])
 def test_aggregate_data_by_nuts_diff_netcdfs(
-    tmp_path, get_dataset, get_nuts_data, tmpdir
+    tmp_path, get_dataset, get_nuts_data, tmpdir, agg_lib
 ):
     out_dir = Path(tmpdir) / "output"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1775,6 +1904,7 @@ def test_aggregate_data_by_nuts_diff_netcdfs(
         tmp_path / "nuts.shp",
         normalize_time=True,
         output_dir=out_dir,
+        agg_lib=agg_lib,
     )
 
     # check if the output file is created
@@ -1799,8 +1929,9 @@ def test_aggregate_data_by_nuts_diff_netcdfs(
     out_dir.rmdir()  # remove the output directory after test
 
 
+@pytest.mark.parametrize("agg_lib", ["geopandas", "exactextract"])
 def test_aggregate_data_by_nuts_diff_netcdfs_diff_times(
-    tmp_path, get_dataset, get_nuts_data, tmpdir
+    tmp_path, get_dataset, get_nuts_data, tmpdir, agg_lib
 ):
     out_dir = Path(tmpdir) / "output"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1829,6 +1960,7 @@ def test_aggregate_data_by_nuts_diff_netcdfs_diff_times(
         tmp_path / "nuts.shp",
         normalize_time=True,
         output_dir=out_dir,
+        agg_lib=agg_lib,
     )
 
     # check if the output file is created
@@ -1849,14 +1981,20 @@ def test_aggregate_data_by_nuts_diff_netcdfs_diff_times(
         assert ds["time"].values.min() == np.datetime64("2024-01-01T00:00:00")
         assert ds["time"].values.max() == np.datetime64("2030-01-01T00:00:00")
 
+        # check if the total number of entries is correct
+        assert (
+            len(ds["t2m"].values.reshape(-1)) == 8
+        )  # two NUTS regions with four time points each
+
     # clean up the output directory
     for file in out_dir.glob("*"):
         file.unlink()
     out_dir.rmdir()  # remove the output directory after test
 
 
+@pytest.mark.parametrize("agg_lib", ["geopandas", "exactextract"])
 def test_aggregate_data_by_nuts_dup_netcdfs(
-    tmp_path, get_dataset, get_nuts_data, tmpdir
+    tmp_path, get_dataset, get_nuts_data, tmpdir, agg_lib
 ):
     out_dir = Path(tmpdir) / "output"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1874,6 +2012,7 @@ def test_aggregate_data_by_nuts_dup_netcdfs(
         tmp_path / "nuts.shp",
         normalize_time=True,
         output_dir=out_dir,
+        agg_lib=agg_lib,
     )
 
     # check if the output file is created

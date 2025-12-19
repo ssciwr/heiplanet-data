@@ -12,6 +12,7 @@ import tempfile
 import textwrap
 from cdo import Cdo
 from dataclasses import dataclass
+import exactextract as ee
 
 
 T = TypeVar("T", bound=Union[np.float64, xr.DataArray])
@@ -1274,34 +1275,90 @@ def preprocess_data_file(
         return dataset, str(output_file.name)
 
 
-def _aggregate_netcdf_nuts(
+def _prepare_for_aggregation(
+    dataset: xr.Dataset,
+    normalize_time: bool = True,
+    agg_dict: Dict[str, str] | None = None,
+) -> Tuple[xr.Dataset, Dict[str, str]]:
+    """
+    Prepare the dataset for aggregation by:
+        * normalizing time if needed,
+        * preparing aggregation dictionary.
+
+    Args:
+        dataset (xr.Dataset): Dataset to prepare.
+        normalize_time (bool): If True, normalize time to the beginning of the day.
+            e.g. 2025-10-01T12:00:00 becomes 2025-10-01T00:00:00.
+            Default is True.
+        agg_dict (Dict[str, str] | None): Dictionary of aggregation functions for each variable.
+            If None, default aggregation (i.e. mean) is used.
+
+    Returns:
+        Tuple[xr.Dataset, Dict[str, str]]: First item is the prepared dataset,
+            with time is normalized if specified.
+            The second item is the aggregation dictionary.
+    """
+    # normalize time if specified
+    if normalize_time:
+        dataset["time"] = dataset["time"].dt.floor("D")
+
+    # prepare aggregation dictionary
+    # get list of data variable names
+    var_names = list(dataset.data_vars.keys())
+
+    invalid_agg_dict = agg_dict is not None and (
+        not isinstance(agg_dict, dict)
+        or not all(
+            isinstance(var, str) and isinstance(func, str)
+            for var, func in agg_dict.items()
+        )
+        or (isinstance(agg_dict, dict) and len(agg_dict) == 0)
+        or not all(var in var_names for var in agg_dict.keys())
+    )
+    if invalid_agg_dict or agg_dict is None:
+        if invalid_agg_dict:
+            warnings.warn(
+                "Invalid agg_dict provided. Using default aggregation (mean) for all variables.",
+                UserWarning,
+            )
+        # default aggregation is mean for each variable
+        agg_dict = dict.fromkeys(var_names, "mean")
+
+    return dataset, agg_dict
+
+
+def _aggregate_netcdf_nuts_gpd(
     nuts_data: gpd.GeoDataFrame,
     nc_file: Path,
-    agg_dict: dict | None,
+    agg_dict: Dict[str, str] | None,
     normalize_time: bool = True,
-) -> Tuple[gpd.GeoDataFrame, list[str]]:
+) -> Tuple[pd.DataFrame, list[str]]:
     """
-    Aggregate NetCDF data by NUTS regions.
-    Left join is used to ensure that all NUTS regions are included,
-    even if some regions do not have data in the NetCDF file.
+    Aggregate NetCDF data by NUTS regions using GeoPandas (i.e. `sjoin`).
+
+    Notes:
+        * `sjoin` does not consider weights based on area overlap.
+        * It is not recommended for very large datasets as it may consume a lot of memory,
+            e.g. global datasets with fine resolution (0.1 deg)
+            and long time series (24 months).
 
     Args:
         nuts_data (gpd.GeoDataFrame): GeoDataFrame containing NUTS data from shape file.
         nc_file (Path): Path to the NetCDF file.
-        agg_dict (dict | None): Dictionary of aggregation functions for each variable.
+        agg_dict (Dict[str, str] | None): Dictionary of aggregation functions for each variable.
             If None, default aggregation (i.e. mean) is used.
         normalize_time (bool): If True, normalize time to the beginning of the day.
             e.g. 2025-10-01T12:00:00 becomes 2025-10-01T00:00:00.
             Default is True.
 
     Returns:
-        Tuple[gpd.GeoDataFrame, list[str]]: First item is aggregated GeoDataFrame,
+        Tuple[pd.DataFrame, list[str]]: First item is aggregated DataFrame,
             with coordinates "NUTS_ID", "time", and
             data variables include aggregated data variables.
             The second item in the tuple is list of data variable names.
     """
     with xr.open_dataset(nc_file, chunks={"time": "auto"}) as dataset:
-        # Ensure the dataset has the required coordinates
+        # ensure the dataset has the required coordinates
         if not all(
             coord in dataset.coords for coord in ["latitude", "longitude", "time"]
         ):
@@ -1310,11 +1367,24 @@ def _aggregate_netcdf_nuts(
                 f"'latitude', 'longitude', and 'time' coordinates."
             )
 
-        if normalize_time:
-            dataset["time"] = dataset["time"].dt.floor("D")
+        # Raise error if the dataset is too large
+        num_lat = dataset.sizes.get("latitude", 0)
+        num_lon = dataset.sizes.get("longitude", 0)
+        num_time = dataset.sizes.get("time", 0)
 
-        # get list of data variable names
-        var_names = list(dataset.data_vars.keys())
+        if (
+            num_lat * num_lon * num_time >= 1801 * 3600 * 12
+        ):  # e.g. global 0.1 deg for 1 year
+            raise ValueError(
+                f"The NetCDF file '{nc_file}' may be too large for "
+                f"GeoPandas spatial join aggregation. "
+                f"Consider using 'exactextract' library for aggregation. "
+                f"Dataset size: {num_lat} lat x {num_lon} lon x {num_time} time points.",
+            )
+
+        # prepare dataset for aggregation
+        dataset, agg_dict = _prepare_for_aggregation(dataset, normalize_time, agg_dict)
+        r_var_names = list(agg_dict.keys())
 
         # Convert the NetCDF dataset to a GeoDataFrame
         nc_data = dataset.to_dataframe().reset_index()
@@ -1333,28 +1403,6 @@ def _aggregate_netcdf_nuts(
         nc_data_merged = nc_data_merged[~nc_data_merged["NUTS_ID"].isna()]
 
         # group by NUTS_ID and time, aggregate using agg_dict
-        invalid_agg_dict = agg_dict is not None and (
-            not isinstance(agg_dict, dict)
-            or not all(
-                isinstance(var, str) and isinstance(func, str)
-                for var, func in agg_dict.items()
-            )
-            or (isinstance(agg_dict, dict) and len(agg_dict) == 0)
-            or not all(var in var_names for var in agg_dict.keys())
-        )
-        if invalid_agg_dict or agg_dict is None:
-            if invalid_agg_dict:
-                warnings.warn(
-                    "Invalid agg_dict provided. Using default aggregation (mean) for all variables.",
-                    UserWarning,
-                )
-            # default aggregation is mean for each variable
-            agg_dict = dict.fromkeys(var_names, "mean")
-            r_var_names = var_names
-        else:
-            # use provided aggregation functions
-            r_var_names = list(agg_dict.keys())
-
         nc_data_agg = nc_data_merged.groupby(["NUTS_ID", "time"], as_index=False).agg(
             agg_dict
         )
@@ -1362,18 +1410,97 @@ def _aggregate_netcdf_nuts(
     return nc_data_agg, r_var_names
 
 
+def _aggregate_netcdf_nuts_ee(
+    nuts_data: gpd.GeoDataFrame,
+    nc_file: Path,
+    agg_dict: dict | None,
+    normalize_time: bool = True,
+) -> Tuple[gpd.GeoDataFrame, list[str]]:
+    """
+    Aggregate NetCDF data by NUTS regions using `exactextract`.
+
+    Notes:
+        * `exactextract` only consider non-`NaN` values during calculation
+            * mean of all NaN values is NaN.
+            * sum of all NaN values is 0.
+
+    Args:
+        nuts_data (gpd.GeoDataFrame): GeoDataFrame containing NUTS data from shape file.
+        nc_file (Path): Path to the NetCDF file.
+        agg_dict (dict | None): Dictionary of aggregation functions for each variable.
+            If None, default aggregation (i.e. mean) is used.
+        normalize_time (bool): If True, normalize time to the beginning of the day.
+            e.g. 2025-10-01T12:00:00 becomes 2025-10-01T00:00:00.
+            Default is True.
+
+    Returns:
+        Tuple[gpd.GeoDataFrame, list[str]]: First item is aggregated GeoDataFrame,
+            with coordinates "NUTS_ID", "time", and
+            data variables include aggregated data variables.
+            The second item in the tuple is list of data variable names.
+    """
+    with xr.open_dataset(nc_file, chunks={"time": "auto"}) as dataset:
+        # ensure the dataset has the required coordinates
+        if not all(
+            coord in dataset.coords for coord in ["latitude", "longitude", "time"]
+        ):
+            raise ValueError(
+                f"NetCDF file '{nc_file}' must contain "
+                f"'latitude', 'longitude', and 'time' coordinates."
+            )
+
+        # prepare dataset for aggregation
+        dataset, agg_dict = _prepare_for_aggregation(dataset, normalize_time, agg_dict)
+        r_var_names = list(agg_dict.keys())
+
+        # aggregate data for each time step
+        agg_data_list = []
+        for time_val in dataset["time"].values:
+            for data_var in r_var_names:
+                data_var_time = dataset[[data_var]].sel(time=time_val)
+
+                data_var_time_agg = ee.exact_extract(
+                    data_var_time,
+                    nuts_data,
+                    f"{data_var}={agg_dict[data_var]}",  # rename the agg column by data_var name
+                    include_cols=["NUTS_ID"],
+                    output="pandas",
+                )
+                data_var_time_agg["time"] = time_val  # add time column
+                agg_data_list.append(data_var_time_agg)
+
+        # merge all aggregated dataframes
+        # by NUTS_ID and time, along all data variables
+        merged_dfs = [
+            pd.merge(
+                agg_data_list[i],
+                agg_data_list[j],
+                on=["NUTS_ID", "time"],
+                how="outer",
+            )
+            for i in range(0, len(agg_data_list), len(r_var_names))
+            for j in range(i + 1, i + len(r_var_names))
+        ]
+        # concatenate all merged dataframes
+        # as they have different time steps
+        nc_data_agg = pd.concat(merged_dfs, ignore_index=True)
+
+    return nc_data_agg, r_var_names
+
+
 def aggregate_data_by_nuts(
-    netcdf_files: dict[str, tuple[Path, dict | None]],
+    netcdf_files: dict[str, tuple[Path, Dict | None]],
     nuts_file: Path,
     normalize_time: bool = True,
     output_dir: Path | None = None,
+    agg_lib: Literal["geopandas", "exactextract"] = "exactextract",
 ) -> Path:
-    """Aggregate data from a NetCDF file by NUTS regions, data variable names, and time.
+    """Aggregate data from NetCDF files by NUTS regions, data variable names, and time.
     The aggregated data is saved to a NetCDF file with coordinates "NUTS_ID", "time",
     and data variables include aggregated data variables.
 
     Args:
-        netcdf_files (dict[str, tuple[Path, dict | None]]): Dictionary of NetCDF files.
+        netcdf_files (dict[str, tuple[Path, Dict | None]]): Dictionary of NetCDF files.
             Keys are dataset names and values are tuples of (file path, agg_dict).
             The agg_dict can contain aggregation options for each data variable.
             For example, {"t2m": "mean", "tp": "sum"}.
@@ -1387,6 +1514,8 @@ def aggregate_data_by_nuts(
         output_dir (Path | None): Directory to save the aggregated NetCDF file.
             If None, the output file is saved in the same directory as the NUTS file.
             Default is None.
+        agg_lib (Literal["geopandas", "exactextract"]): Library to use for aggregation.
+            Options are "geopandas" or "exactextract". Default is "exactextract".
 
     Returns:
         Path: Path to the aggregated NetCDF file.
@@ -1425,12 +1554,22 @@ def aggregate_data_by_nuts(
         file_path, agg_dict = file_info
         print(f"Processing NetCDF file: {file_path}")
 
-        nc_data_agg, r_var_names = _aggregate_netcdf_nuts(
-            nuts_data,
-            file_path,
-            agg_dict,
-            normalize_time=normalize_time,
-        )
+        if agg_lib == "geopandas":
+            nc_data_agg, r_var_names = _aggregate_netcdf_nuts_gpd(
+                nuts_data,
+                file_path,
+                agg_dict,
+                normalize_time=normalize_time,
+            )
+        elif agg_lib == "exactextract":
+            nc_data_agg, r_var_names = _aggregate_netcdf_nuts_ee(
+                nuts_data,
+                file_path,
+                agg_dict,
+                normalize_time=normalize_time,
+            )
+        else:
+            raise ValueError("agg_lib must be one of 'geopandas' or 'exactextract'.")
 
         # merge nuts data with aggregated NetCDF data
         if first_merge:
@@ -1439,12 +1578,15 @@ def aggregate_data_by_nuts(
         elif set(nc_data_agg.columns).issubset(set(out_data.columns)):
             # if the next NetCDF file has the same data variable names,
             # concat the data and drop duplicates
-            out_data = gpd.GeoDataFrame(
+            out_data = (
                 pd.concat([out_data, nc_data_agg])
-                .drop_duplicates(subset=["NUTS_ID", "time"], keep="last")
-                .sort_values("NUTS_ID", ignore_index=True),
-                crs=out_data.crs,
+                .drop_duplicates(
+                    subset=["NUTS_ID", "time"], keep="last"
+                )  # TODO: check the case where the newer data has overlapping time steps
+                # but only for some data variables in out_data
+                .sort_values("NUTS_ID", ignore_index=True)
             )
+
         else:
             out_data = out_data.merge(nc_data_agg, on=["NUTS_ID", "time"], how="outer")
 
