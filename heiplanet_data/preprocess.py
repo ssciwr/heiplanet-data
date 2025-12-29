@@ -1598,8 +1598,8 @@ def aggregate_data_by_nuts(
             raise ValueError("agg_lib must be one of 'geopandas' or 'exactextract'.")
 
         # merge nuts data with aggregated NetCDF data
-        out_columns = set(out_data.columns) - set(["NUTS_ID", "time"])
-        nc_columns = set(nc_data_agg.columns) - set(["NUTS_ID", "time"])
+        out_columns = set(out_data.columns) - {"NUTS_ID", "time"}
+        nc_columns = set(nc_data_agg.columns) - {"NUTS_ID", "time"}
 
         if first_merge:
             out_data = out_data.merge(nc_data_agg, on=["NUTS_ID"], how="outer")
