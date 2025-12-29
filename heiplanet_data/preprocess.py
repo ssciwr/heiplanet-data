@@ -1573,7 +1573,7 @@ def aggregate_data_by_nuts(
 
     # load data from the NetCDF file
     # merge nuts data with aggregated NetCDF data
-    out_data = nuts_data
+    out_data = nuts_data["NUTS_ID"].to_frame()  # start with all NUTS_IDs
     agg_var_names = []
     first_merge = True
     for ds_name, file_info in netcdf_files.items():
@@ -1598,23 +1598,38 @@ def aggregate_data_by_nuts(
             raise ValueError("agg_lib must be one of 'geopandas' or 'exactextract'.")
 
         # merge nuts data with aggregated NetCDF data
+        out_columns = set(out_data.columns) - set(["NUTS_ID", "time"])
+        nc_columns = set(nc_data_agg.columns) - set(["NUTS_ID", "time"])
+
         if first_merge:
             out_data = out_data.merge(nc_data_agg, on=["NUTS_ID"], how="outer")
             first_merge = False
-        elif set(nc_data_agg.columns).issubset(set(out_data.columns)):
-            # if the next NetCDF file has the same data variable names,
-            # concat the data and drop duplicates
-            out_data = (
-                pd.concat([out_data, nc_data_agg])
-                .drop_duplicates(
-                    subset=["NUTS_ID", "time"], keep="last"
-                )  # TODO: check the case where the newer data has overlapping time steps
-                # but only for some data variables in out_data
-                .sort_values("NUTS_ID", ignore_index=True)
+
+        elif out_columns.isdisjoint(nc_columns):
+            # if the next NetCDF file has different data variable names,
+            # merge the data
+            out_data = out_data.merge(
+                nc_data_agg, on=["NUTS_ID", "time"], how="outer", validate="1:1"
             )
 
         else:
-            out_data = out_data.merge(nc_data_agg, on=["NUTS_ID", "time"], how="outer")
+            # if there are overlapping data variable names,
+            # merge first with new values suffixed by '_new'
+            out_data = out_data.merge(
+                nc_data_agg,
+                on=["NUTS_ID", "time"],
+                how="outer",
+                validate="1:1",
+                suffixes=("", "_new"),
+            )
+            # update old data variable values with new values
+            for var in out_columns.intersection(nc_columns):
+                out_data[var] = out_data[var + "_new"].combine_first(out_data[var])
+
+            # drop the new suffixed columns
+            out_data = out_data.drop(
+                columns=[var + "_new" for var in out_columns.intersection(nc_columns)]
+            )
 
         # update the output file name
         out_file_name += f"_{ds_name}"

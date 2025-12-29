@@ -1844,6 +1844,9 @@ def test_aggregate_data_by_nuts(tmp_path, get_dataset, get_nuts_data, tmpdir, ag
         assert "time" in ds.coords
         assert "t2m" in ds.data_vars
         assert "tp" in ds.data_vars
+        assert ds.sizes.get("NUTS_ID") == 2  # two NUTS regions
+        assert ds.sizes.get("time") == 2  # two time points
+        assert len(ds.data_vars) == 2  # only two variables
 
         # check if the time is normalized to midnight
         assert np.all(ds["time"].dt.hour == 0)
@@ -1909,7 +1912,7 @@ def test_aggregate_data_by_nuts_diff_netcdfs(
 
     # aggregate data by NUTS regions
     out_file = preprocess.aggregate_data_by_nuts(
-        {"era5": (file_path1, None), "era5_mod": (file_path2, None)},
+        {"era5": (file_path1, None), "era5_mod": (file_path2, None)},  # disjoin case
         tmp_path / "nuts.shp",
         normalize_time=True,
         output_dir=out_dir,
@@ -1928,6 +1931,9 @@ def test_aggregate_data_by_nuts_diff_netcdfs(
         assert "tp" in ds.data_vars
         assert "t2m_mod" in ds.data_vars
         assert "tp_mod" in ds.data_vars
+        assert ds.sizes.get("NUTS_ID") == 2  # two NUTS regions
+        assert ds.sizes.get("time") == 2  # two time points
+        assert len(ds.data_vars) == 4  # four variables
 
         # check if the time is normalized to midnight
         assert np.all(ds["time"].dt.hour == 0)
@@ -2037,8 +2043,72 @@ def test_aggregate_data_by_nuts_dup_netcdfs(
         assert (
             len(ds["t2m"].values.reshape(-1)) == 4
         )  # two NUTS regions with two time points each
+        assert len(ds.data_vars) == 2  # only two variables
 
     # clean up the output directory
     for file in out_dir.glob("*"):
         file.unlink()
     out_dir.rmdir()  # remove the output directory after test
+
+
+@pytest.mark.parametrize("agg_lib", ["geopandas", "exactextract"])
+def test_aggregate_data_by_nuts_overlapping_netcdfs(
+    tmp_path, get_dataset, get_nuts_data, tmpdir, agg_lib
+):
+    out_dir = Path(tmpdir) / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # save dataset to a temporary file
+    file_path1 = tmp_path / "test_data1.nc"
+    file_path2 = tmp_path / "test_data2.nc"
+    get_dataset.to_netcdf(file_path1)
+    # modify the dataset for the second file
+    # to create ds with overlapping time values
+    modified_dataset = get_dataset.copy()
+    modified_dataset["time"] = np.array(
+        ["2025-01-01T00:00:00", "2026-01-01T00:00:00"], dtype="datetime64"
+    )
+    # change variable names
+    modified_dataset = modified_dataset.rename({"tp": "tp_mod"})
+    modified_dataset.to_netcdf(file_path2)
+
+    # save nuts data to a temporary file
+    get_nuts_data.to_file(tmp_path / "nuts.shp")
+
+    # aggregate data by NUTS regions with overlapping time values
+    out_file = preprocess.aggregate_data_by_nuts(
+        {"era5": (file_path1, None), "era5_mod": (file_path2, None)},
+        tmp_path / "nuts.shp",
+        normalize_time=True,
+        output_dir=out_dir,
+        agg_lib=agg_lib,
+    )
+
+    # check if the output file is created
+    assert out_file.exists()
+    assert out_file.suffix == ".nc"
+    assert out_file.parent == out_dir
+    with xr.open_dataset(out_file) as ds:
+        # check if the data is aggregated correctly
+        assert "NUTS_ID" in ds.coords
+        assert "time" in ds.coords
+        assert "t2m" in ds.data_vars
+        assert "tp" in ds.data_vars
+        assert "tp_mod" in ds.data_vars
+
+        # check if the time values are correct
+        assert len(ds["time"]) == 3
+        assert ds["time"].values.min() == np.datetime64("2024-01-01T00:00:00")
+        assert ds["time"].values.max() == np.datetime64("2026-01-01T00:00:00")
+
+        # check if the total number of entries is correct
+        assert ds.sizes.get("NUTS_ID") == 2  # two NUTS regions
+        assert len(ds.data_vars) == 3  # three variables
+
+        # check if t2m values are updated correctly for overlapping time
+        t2m_time0 = ds["t2m"].sel(time="2024-01-01").values
+        t2m_time1 = ds["t2m"].sel(time="2025-01-01").values
+        t2m_time2 = ds["t2m"].sel(time="2026-01-01").values
+        assert np.allclose(t2m_time0, t2m_time1)
+        assert np.allclose(t2m_time2[0], get_dataset["t2m"].values[1, :, 0].mean())
+        assert np.allclose(t2m_time2[1], get_dataset["t2m"].values[1, :, 1:].mean())
