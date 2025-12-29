@@ -1748,6 +1748,31 @@ def test_aggregate_netcdf_nuts_ee_custom_agg_dict(tmp_path, get_dataset, get_nut
     assert np.isclose(out_data.iloc[0]["tp"], get_dataset["tp"].values[0, :, 0].sum())
 
 
+def test_aggregate_netcdf_nuts_ee_minus_in_name(tmp_path, get_dataset, get_nuts_data):
+    file_path = tmp_path / "test_data.nc"
+    # change data variable names to have '-' in them
+    get_dataset = get_dataset.rename({"t2m": "t-2m", "tp": "t-p"})
+    get_dataset.to_netcdf(file_path)
+
+    # aggregate data
+    out_data, variable_names = preprocess._aggregate_netcdf_nuts_ee(
+        get_nuts_data, file_path, agg_dict=None, normalize_time=False
+    )
+
+    assert "NUTS_ID" in out_data.columns
+    assert "t-2m" in out_data.columns
+    assert "t-p" in out_data.columns
+    assert variable_names == ["t-2m", "t-p"]
+
+    # sort by NUTS_ID and time
+    # since the order is different from geopandas aggregation
+    out_data = out_data.sort_values(by=["NUTS_ID", "time"]).reset_index(drop=True)
+
+    assert np.isclose(
+        out_data.iloc[0]["t-p"], get_dataset["t-p"].values[0, :, 0].mean()
+    )
+
+
 def test_check_aggregation_inputs_invalid(tmp_path):
     # non dict
     with pytest.raises(ValueError):

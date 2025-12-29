@@ -1464,14 +1464,30 @@ def _aggregate_netcdf_nuts_ee(
             for data_var in r_var_names:
                 data_var_time = dataset[[data_var]].sel(time=time_val)
 
+                renamed = False
+                if "-" in data_var:
+                    # rename data_var to discard `-` in the name
+                    # exactextract does not support `-` in variable names
+                    updated_data_var = data_var.replace("-", "_")
+                    renamed = True
+                else:
+                    updated_data_var = data_var
+
                 data_var_time_agg = ee.exact_extract(
                     data_var_time,
                     nuts_data,
-                    f"{data_var}={agg_dict[data_var]}",  # rename the agg column by data_var name
+                    f"{updated_data_var}={agg_dict[data_var]}",  # rename the agg column by data_var name
                     include_cols=["NUTS_ID"],
                     output="pandas",
                 )
                 data_var_time_agg["time"] = time_val  # add time column
+
+                if renamed:
+                    # change back the column name to original data_var name
+                    data_var_time_agg = data_var_time_agg.rename(
+                        columns={updated_data_var: data_var}
+                    )
+
                 agg_data_list.append(data_var_time_agg)
 
         # merge all aggregated dataframes
