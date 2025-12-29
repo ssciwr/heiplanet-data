@@ -1371,9 +1371,14 @@ def _aggregate_netcdf_nuts_gpd(
         num_lat = dataset.sizes.get("latitude", 0)
         num_lon = dataset.sizes.get("longitude", 0)
         num_time = dataset.sizes.get("time", 0)
+        num_vars = len(dataset.data_vars)
 
         if (
-            num_lat * num_lon * num_time >= 1801 * 3600 * 12
+            num_lat * num_lon * num_time * num_vars
+            > 360
+            * 720
+            * 24
+            * 2  # global data for 2 years, 2 variables, 0.5 degree resolution
         ):  # e.g. global 0.1 deg for 1 year
             raise ValueError(
                 f"The NetCDF file '{nc_file}' may be too large for "
@@ -1477,6 +1482,7 @@ def _aggregate_netcdf_nuts_ee(
                 agg_data_list[j],
                 on=["NUTS_ID", "time"],
                 how="outer",
+                validate="1:1",
             )
             for i in range(0, len(agg_data_list), len(r_var_names))
             for j in range(i + 1, i + len(r_var_names))
@@ -1486,6 +1492,34 @@ def _aggregate_netcdf_nuts_ee(
         nc_data_agg = pd.concat(merged_dfs, ignore_index=True)
 
     return nc_data_agg, r_var_names
+
+
+def _check_aggregation_inputs(
+    netcdf_files: dict[str, tuple[Path, Dict | None]],
+    nuts_file: Path,
+):
+    """Check the inputs for aggregation function.
+
+    Args:
+        netcdf_files (dict[str, tuple[Path, Dict | None]]): Dictionary of NetCDF files.
+            Keys are dataset names and values are tuples of (file path, agg_dict).
+            The agg_dict can contain aggregation options for each data variable.
+            For example, {"t2m": "mean", "tp": "sum"}.
+            If agg_dict is None, default aggregation (i.e. mean) is used.
+            NetCDF files must contain "latitude", "longitude", and "time" coordinates.
+        nuts_file (Path): Path to the NUTS regions shape file.
+            The shape file has columns such as "NUTS_ID" and "geometry".
+    """
+    if not isinstance(netcdf_files, dict) or not netcdf_files:
+        raise ValueError("netcdf_files must be a non-empty dictionary.")
+
+    for netcdf_file in netcdf_files.values():
+        if not utils.is_non_empty_file(netcdf_file[0]):
+            raise ValueError(
+                f"NetCDF file '{netcdf_file[0]}' is not valid path or empty."
+            )
+    if not utils.is_non_empty_file(nuts_file):
+        raise ValueError("nuts_file must be a valid file path.")
 
 
 def aggregate_data_by_nuts(
@@ -1520,16 +1554,8 @@ def aggregate_data_by_nuts(
     Returns:
         Path: Path to the aggregated NetCDF file.
     """
-    if not isinstance(netcdf_files, dict) or not netcdf_files:
-        raise ValueError("netcdf_files must be a non-empty dictionary.")
-
-    for netcdf_file in netcdf_files.values():
-        if not utils.is_non_empty_file(netcdf_file[0]):
-            raise ValueError(
-                f"NetCDF file '{netcdf_file[0]}' is not valid path or empty."
-            )
-    if not utils.is_non_empty_file(nuts_file):
-        raise ValueError("nuts_file must be a valid file path.")
+    # check inputs
+    _check_aggregation_inputs(netcdf_files, nuts_file)
 
     # load data from the nuts shape file
     nuts_data = gpd.read_file(nuts_file)

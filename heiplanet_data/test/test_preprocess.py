@@ -1551,7 +1551,7 @@ def test_prepare_for_aggregation_normalize(get_dataset):
 
 def test_prepare_for_aggregation_agg_dict(get_dataset):
     # None case
-    ds, p_agg_dict = preprocess._prepare_for_aggregation(
+    _, p_agg_dict = preprocess._prepare_for_aggregation(
         get_dataset, normalize_time=False, agg_dict=None
     )
     expected_agg_dict = {
@@ -1565,29 +1565,29 @@ def test_prepare_for_aggregation_agg_dict(get_dataset):
         "t2m": "mean",
         "tp": "sum",
     }
-    ds, p_agg_dict = preprocess._prepare_for_aggregation(
+    _, p_agg_dict = preprocess._prepare_for_aggregation(
         get_dataset, normalize_time=False, agg_dict=o_agg_dict
     )
     assert p_agg_dict == o_agg_dict
 
     # invalid cases
     with pytest.warns(UserWarning):
-        ds, p_agg_dict = preprocess._prepare_for_aggregation(
+        _, p_agg_dict = preprocess._prepare_for_aggregation(
             get_dataset, normalize_time=False, agg_dict={"t2m": 1}
         )
     assert p_agg_dict == expected_agg_dict
     with pytest.warns(UserWarning):
-        ds, p_agg_dict = preprocess._prepare_for_aggregation(
+        _, p_agg_dict = preprocess._prepare_for_aggregation(
             get_dataset, normalize_time=False, agg_dict="something"
         )
     assert p_agg_dict == expected_agg_dict
     with pytest.warns(UserWarning):
-        ds, p_agg_dict = preprocess._prepare_for_aggregation(
+        _, p_agg_dict = preprocess._prepare_for_aggregation(
             get_dataset, normalize_time=False, agg_dict={}
         )
     assert p_agg_dict == expected_agg_dict
     with pytest.warns(UserWarning):
-        ds, p_agg_dict = preprocess._prepare_for_aggregation(
+        _, p_agg_dict = preprocess._prepare_for_aggregation(
             get_dataset, normalize_time=False, agg_dict={"invalid_key": "mean"}
         )
     assert p_agg_dict == expected_agg_dict
@@ -1664,8 +1664,11 @@ def test_aggregate_netcdf_nuts_gpd_too_large_ds(tmp_path, get_nuts_data):
     time = pd.date_range("2025-01-01", periods=12, freq="ME")
     lat = np.arange(-90.0, 90.1, 0.1)
     lon = np.arange(-180.0, 180.1, 0.1)
+    rng = np.random.default_rng(seed=42)
     data = xr.DataArray(
-        np.random.rand(len(time), len(lat), len(lon)),
+        rng.random(
+            (len(time), len(lat), len(lon))
+        ),  # rng.random takes shape as a tuple
         coords=[time, lat, lon],
         dims=["time", "latitude", "longitude"],
     )
@@ -1745,7 +1748,7 @@ def test_aggregate_netcdf_nuts_ee_custom_agg_dict(tmp_path, get_dataset, get_nut
     assert np.isclose(out_data.iloc[0]["tp"], get_dataset["tp"].values[0, :, 0].sum())
 
 
-def test_aggregate_data_by_nuts_invalid(tmp_path):
+def test_check_aggregation_inputs_invalid(tmp_path):
     # non dict
     with pytest.raises(ValueError):
         preprocess.aggregate_data_by_nuts("something", tmp_path / "nuts.shp")
@@ -1775,6 +1778,12 @@ def test_aggregate_data_by_nuts_invalid(tmp_path):
         preprocess.aggregate_data_by_nuts(
             {"era5": (nc_file, None)}, tmp_path / "nuts.shp"
         )
+
+
+def test_aggregate_data_by_nuts_invalid(tmp_path):
+    nc_file = tmp_path / "test_data.nc"
+    with open(nc_file, "w") as f:
+        f.write("This is a test file.")
 
     # dict with nust data but no NUTS_ID and geometry columns
     data = {
