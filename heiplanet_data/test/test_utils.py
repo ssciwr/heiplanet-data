@@ -165,6 +165,24 @@ def test_is_valid_settings():
     settings = {"unify_coords": True, "unify_coords_fname": "test"}
     assert utils.is_valid_settings(settings) is False
 
+    settings = {
+        "cal_monthly_tp": True,
+        "cal_monthly_tp_vname": "tp",
+        "cal_monthly_tp_tcoord": "time",
+        "cal_monthly_tp_fname": "montp",
+    }
+    assert utils.is_valid_settings(settings) is True
+    settings = {"cal_monthly_tp": "error"}
+    assert utils.is_valid_settings(settings) is False
+    settings = {"cal_monthly_tp": True}
+    assert utils.is_valid_settings(settings) is False
+    settings = {"cal_monthly_tp_vname": 1}
+    assert utils.is_valid_settings(settings) is False
+    settings = {"cal_monthly_tp_tcoord": True}
+    assert utils.is_valid_settings(settings) is False
+    settings = {"cal_monthly_tp_fname": {}}
+    assert utils.is_valid_settings(settings) is False
+
 
 def test_update_new_settings_empty():
     updated = utils._update_new_settings({"test": "test"}, {})

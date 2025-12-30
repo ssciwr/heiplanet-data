@@ -812,7 +812,7 @@ class ResolutionConfig:
         lon_name (str): Name of the longitude coordinate. Default is "longitude".
         downsample_lib (Literal["xarray", "xesmf", "cdo"]): Library to use for downsampling.
             Options are "xarray", "xesmf", or "cdo". Default is "xesmf".
-        agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
+        downsample_agg_funcs (Dict[str, str] | None): Aggregation function for each variable.
             If None, default aggregation of corresponding library is used. Default is None.
         upsample_method_map (Dict[str, str] | None): Mapping of variable names to
             interpolation methods. If None, linear interpolation is used. Default is None.
@@ -822,7 +822,7 @@ class ResolutionConfig:
     lat_name: str = "latitude"
     lon_name: str = "longitude"
     downsample_lib: Literal["xarray", "xesmf", "cdo"] = "xesmf"
-    agg_funcs: Dict[str, str] | None = None
+    downsample_agg_funcs: Dict[str, str] | None = None
     upsample_method_map: Dict[str, str] | None = None
 
 
@@ -881,7 +881,7 @@ def resample_resolution(
     lat_name = resolution_config.lat_name
     lon_name = resolution_config.lon_name
     downsample_lib = resolution_config.downsample_lib
-    agg_funcs = resolution_config.agg_funcs
+    downsample_agg_funcs = resolution_config.downsample_agg_funcs
     upsample_method_map = resolution_config.upsample_method_map
 
     expected_longitude_max = grid_config.expected_longitude_max_xarray
@@ -910,7 +910,7 @@ def resample_resolution(
                 new_resolution=new_resolution,
                 lat_name=lat_name,
                 lon_name=lon_name,
-                agg_funcs=agg_funcs,
+                agg_funcs=downsample_agg_funcs,
             )
             return align_lon_lat_with_popu_data(
                 dataset,
@@ -928,7 +928,7 @@ def resample_resolution(
                 new_max_lon=new_max_lon,
                 lat_name=lat_name,
                 lon_name=lon_name,
-                agg_funcs=agg_funcs,
+                agg_funcs=downsample_agg_funcs,
             )
         elif downsample_lib == "cdo":
             return downsample_resolution_with_cdo(
@@ -940,7 +940,7 @@ def resample_resolution(
                 new_lon_size=new_lon_size,
                 lat_name=lat_name,
                 lon_name=lon_name,
-                agg_funcs=agg_funcs,
+                agg_funcs=downsample_agg_funcs,
                 gridtype=gridtype,
             )
         else:
@@ -1057,6 +1057,62 @@ def truncate_data_by_time(
     return dataset.sel({var_name: slice(start_date, end_date)})
 
 
+def _check_month_start_data(times: xr.DataArray) -> bool:
+    """Check if all time points are at the start of the month.
+    E.g. 2016-01-01, 2016-02-01, ..., 2017-01-01, 2018-01-01 ...
+
+    Args:
+        times (xr.DataArray): Time coordinate to check.
+
+    Returns:
+        bool: True if all time points are at the start of the month, False otherwise.
+    """
+    days = times.dt.day.values
+
+    # check if all days are 1
+    if not np.all(days == 1):
+        return False
+
+    return True
+
+
+def calculate_monthly_precipitation(
+    dataset: xr.Dataset, var_name: str = "tp", time_coord: str = "time"
+) -> xr.Dataset:
+    """Calculate monthly total precipitation from data downloaded from ERA5-Land monthly data.
+    The real precipitation of the month = downloaded value * number of days in the month.
+
+    Args:
+        dataset (xr.Dataset): Dataset with total precipitation data.
+        var_name (str): Name of the precipitation variable in the dataset. Default is "tp".
+        time_coord (str): Name of the time coordinate in the dataset. Default is "time".
+
+    Returns:
+        xr.Dataset: Dataset with monthly total precipitation values.
+    """
+    # check inputs
+    if time_coord not in dataset.coords:
+        raise ValueError(f"Time coordinate '{time_coord}' not found in dataset.")
+
+    if var_name not in dataset.data_vars:
+        raise ValueError(f"Variable '{var_name}' not found in dataset.")
+
+    times = dataset[time_coord]
+
+    if not _check_month_start_data(times):
+        raise ValueError("The dataset does not have month start data.")
+
+    # calculate number of days in each month
+    days_in_month = times.dt.days_in_month
+
+    # calculate monthly total precipitation
+    org_attrs = dataset[var_name].attrs.copy()
+    dataset[var_name] = dataset[var_name] * days_in_month
+    dataset[var_name].attrs = org_attrs
+
+    return dataset
+
+
 def _replace_decimal_point(degree: float) -> str:
     """Replace the decimal point in a degree string with 'p'
     if the degree is greater than or equal to 1.0,
@@ -1118,8 +1174,8 @@ def _apply_preprocessing(
     lon_name = resample_grid_vname[1] if resample_grid_vname else None
     resample_grid_fname = settings.get("resample_grid_fname")
     resample_degree = settings.get("resample_degree")
-    resample_agg_funcs = settings.get("resample_agg_funcs", None)
-    resample_upsample_method_map = settings.get("resample_upsample_method_map", None)
+    downsample_agg_funcs = settings.get("downsample_agg_funcs", None)
+    upsample_method_map = settings.get("upsample_method_map", None)
     resample_expected_longitude_max = settings.get(
         "downsample_max_lon_xarray", np.float64(179.75)
     )
@@ -1136,6 +1192,11 @@ def _apply_preprocessing(
     truncate_date_from = settings.get("truncate_date_from")
     truncate_date_to = settings.get("truncate_date_to")
     truncate_date_vname = settings.get("truncate_date_vname")
+
+    cal_monthly_tp = settings.get("cal_monthly_tp", False)
+    cal_monthly_tp_vname = settings.get("cal_monthly_tp_vname")
+    cal_monthly_tp_tcoord = settings.get("cal_monthly_tp_tcoord")
+    cal_monthly_tp_fname = settings.get("cal_monthly_tp_fname")
 
     if unify_coords:
         print("Renaming coordinates to unify them across datasets...")
@@ -1178,8 +1239,8 @@ def _apply_preprocessing(
                 lat_name=lat_name,
                 lon_name=lon_name,
                 downsample_lib=downsample_lib,
-                agg_funcs=resample_agg_funcs,
-                upsample_method_map=resample_upsample_method_map,
+                downsample_agg_funcs=downsample_agg_funcs,
+                upsample_method_map=upsample_method_map,
             ),
             grid_config=GridConfig(
                 expected_longitude_max_xarray=resample_expected_longitude_max,
@@ -1210,6 +1271,22 @@ def _apply_preprocessing(
             truncate_date_to[:4] if truncate_date_to else np.datetime64(max_time, "Y")
         )
         file_name_base += f"_{min_year}-{max_year}"
+
+    if (
+        cal_monthly_tp
+        and cal_monthly_tp_vname in dataset.data_vars
+        and cal_monthly_tp_tcoord in dataset.coords
+    ):
+        print(
+            "Calculating monthly total precipitation = "
+            "downloaded data * number of days in month..."
+        )
+        dataset = calculate_monthly_precipitation(
+            dataset,
+            var_name=cal_monthly_tp_vname,
+            time_coord=cal_monthly_tp_tcoord,
+        )
+        file_name_base += f"_{cal_monthly_tp_fname}"
 
     return dataset, file_name_base
 
