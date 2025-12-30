@@ -1773,6 +1773,32 @@ def test_aggregate_netcdf_nuts_ee_minus_in_name(tmp_path, get_dataset, get_nuts_
     )
 
 
+def test_aggregate_netcdf_nuts_ee_3_data_vars(tmp_path, get_dataset, get_nuts_data):
+    file_path = tmp_path / "test_data.nc"
+    # add a third data variable
+    get_dataset["humidity"] = get_dataset["t2m"] * 0.5
+    get_dataset.to_netcdf(file_path)
+
+    # aggregate data
+    out_data, variable_names = preprocess._aggregate_netcdf_nuts_ee(
+        get_nuts_data, file_path, agg_dict=None, normalize_time=False
+    )
+
+    assert "NUTS_ID" in out_data.columns
+    assert "t2m" in out_data.columns
+    assert "tp" in out_data.columns
+    assert "humidity" in out_data.columns
+    assert set(variable_names) == {"t2m", "tp", "humidity"}
+
+    # sort by NUTS_ID and time
+    # since the order is different from geopandas aggregation
+    out_data = out_data.sort_values(by=["NUTS_ID", "time"]).reset_index(drop=True)
+
+    assert np.isclose(
+        out_data.iloc[0]["humidity"], get_dataset["humidity"].values[0, :, 0].mean()
+    )
+
+
 def test_check_aggregation_inputs_invalid(tmp_path):
     # non dict
     with pytest.raises(ValueError):

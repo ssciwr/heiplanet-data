@@ -13,6 +13,7 @@ import textwrap
 from cdo import Cdo
 from dataclasses import dataclass
 import exactextract as ee
+from functools import reduce
 
 
 T = TypeVar("T", bound=Union[np.float64, xr.DataArray])
@@ -1459,8 +1460,9 @@ def _aggregate_netcdf_nuts_ee(
         r_var_names = list(agg_dict.keys())
 
         # aggregate data for each time step
-        agg_data_list = []
+        data_agg_list = []
         for time_val in dataset["time"].values:
+            data_agg_t = []
             for data_var in r_var_names:
                 data_var_time = dataset[[data_var]].sel(time=time_val)
 
@@ -1488,23 +1490,23 @@ def _aggregate_netcdf_nuts_ee(
                         columns={updated_data_var: data_var}
                     )
 
-                agg_data_list.append(data_var_time_agg)
+                data_agg_t.append(data_var_time_agg)
+            data_agg_list.append(data_agg_t)
 
         # merge all aggregated dataframes
         # by NUTS_ID and time, along all data variables
         merged_dfs = [
-            pd.merge(
-                agg_data_list[i],
-                agg_data_list[j],
-                on=["NUTS_ID", "time"],
-                how="outer",
-                validate="1:1",
+            reduce(
+                lambda left, right: pd.merge(
+                    left, right, on=["NUTS_ID", "time"], how="outer", validate="1:1"
+                ),
+                data_t,
             )
-            for i in range(0, len(agg_data_list), len(r_var_names))
-            for j in range(i + 1, i + len(r_var_names))
+            for data_t in data_agg_list
         ]
         # concatenate all merged dataframes
         # as they have different time steps
+        assert len(merged_dfs) == len(dataset["time"].values)
         nc_data_agg = pd.concat(merged_dfs, ignore_index=True)
 
     return nc_data_agg, r_var_names
