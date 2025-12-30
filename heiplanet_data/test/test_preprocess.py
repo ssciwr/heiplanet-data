@@ -1625,7 +1625,9 @@ def test_aggregate_netcdf_nuts_gpd_normalize_none_aggdict(
     assert "latitude" not in out_data.columns
     assert var_names == ["t2m", "tp"]
     assert len(out_data) == 4  # two NUTS regions with two time points each
-    assert out_data["time"].dt.hour.unique().tolist() == [0]  # check if time is mid-day
+    assert out_data["time"].dt.hour.unique().tolist() == [
+        0
+    ]  # check if time is midnight
     assert np.isclose(
         out_data.iloc[0]["t2m"], get_dataset["t2m"].values[0, :, 0].mean()
     )
@@ -1713,7 +1715,9 @@ def test_aggregate_netcdf_nuts_ee_normalize_none_aggdict(
     assert "latitude" not in out_data.columns
     assert var_names == ["t2m", "tp"]
     assert len(out_data) == 4  # two NUTS regions with two time points each
-    assert out_data["time"].dt.hour.unique().tolist() == [0]  # check if time is mid-day
+    assert out_data["time"].dt.hour.unique().tolist() == [
+        0
+    ]  # check if time is midnight
 
     # sort by NUTS_ID and time
     # since the order is different from geopandas aggregation
@@ -1963,7 +1967,7 @@ def test_aggregate_data_by_nuts_diff_netcdfs(
 
     # aggregate data by NUTS regions
     out_file = preprocess.aggregate_data_by_nuts(
-        {"era5": (file_path1, None), "era5_mod": (file_path2, None)},  # disjoin case
+        {"era5": (file_path1, None), "era5_mod": (file_path2, None)},  # disjoint case
         tmp_path / "nuts.shp",
         normalize_time=True,
         output_dir=out_dir,

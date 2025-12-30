@@ -1419,9 +1419,9 @@ def _aggregate_netcdf_nuts_gpd(
 def _aggregate_netcdf_nuts_ee(
     nuts_data: gpd.GeoDataFrame,
     nc_file: Path,
-    agg_dict: dict | None,
+    agg_dict: Dict[str, str] | None,
     normalize_time: bool = True,
-) -> Tuple[gpd.GeoDataFrame, list[str]]:
+) -> Tuple[pd.DataFrame, list[str]]:
     """
     Aggregate NetCDF data by NUTS regions using `exactextract`.
 
@@ -1433,14 +1433,14 @@ def _aggregate_netcdf_nuts_ee(
     Args:
         nuts_data (gpd.GeoDataFrame): GeoDataFrame containing NUTS data from shape file.
         nc_file (Path): Path to the NetCDF file.
-        agg_dict (dict | None): Dictionary of aggregation functions for each variable.
+        agg_dict (Dict[str, str] | None): Dictionary of aggregation functions for each variable.
             If None, default aggregation (i.e. mean) is used.
         normalize_time (bool): If True, normalize time to the beginning of the day.
             e.g. 2025-10-01T12:00:00 becomes 2025-10-01T00:00:00.
             Default is True.
 
     Returns:
-        Tuple[gpd.GeoDataFrame, list[str]]: First item is aggregated GeoDataFrame,
+        Tuple[pd.DataFrame, list[str]]: First item is aggregated DataFrame,
             with coordinates "NUTS_ID", "time", and
             data variables include aggregated data variables.
             The second item in the tuple is list of data variable names.
@@ -1466,12 +1466,12 @@ def _aggregate_netcdf_nuts_ee(
             for data_var in r_var_names:
                 data_var_time = dataset[[data_var]].sel(time=time_val)
 
-                renamed = False
+                convert_minus = False
                 if "-" in data_var:
                     # rename data_var to discard `-` in the name
                     # exactextract does not support `-` in variable names
                     updated_data_var = data_var.replace("-", "_")
-                    renamed = True
+                    convert_minus = True
                 else:
                     updated_data_var = data_var
 
@@ -1484,7 +1484,7 @@ def _aggregate_netcdf_nuts_ee(
                 )
                 data_var_time_agg["time"] = time_val  # add time column
 
-                if renamed:
+                if convert_minus:
                     # change back the column name to original data_var name
                     data_var_time_agg = data_var_time_agg.rename(
                         columns={updated_data_var: data_var}
@@ -1513,13 +1513,13 @@ def _aggregate_netcdf_nuts_ee(
 
 
 def _check_aggregation_inputs(
-    netcdf_files: dict[str, tuple[Path, Dict | None]],
+    netcdf_files: dict[str, tuple[Path, Dict[str, str] | None]],
     nuts_file: Path,
 ):
     """Check the inputs for aggregation function.
 
     Args:
-        netcdf_files (dict[str, tuple[Path, Dict | None]]): Dictionary of NetCDF files.
+        netcdf_files (dict[str, tuple[Path, Dict[str, str] | None]]): Dictionary of NetCDF files.
             Keys are dataset names and values are tuples of (file path, agg_dict).
             The agg_dict can contain aggregation options for each data variable.
             For example, {"t2m": "mean", "tp": "sum"}.
