@@ -1137,7 +1137,7 @@ def test_truncate_data_by_time(get_dataset):
     assert truncated_dataset["t2m"].time.values[0] == np.datetime64("2025-01-01")
 
 
-def test_check_monthl_start_data():
+def test_check_month_start_data():
     months = ["2016-01-01", "2016-03-01"]
     data = xr.DataArray(
         data=np.array(months, dtype="datetime64[ns]"),
