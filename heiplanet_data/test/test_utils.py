@@ -37,6 +37,10 @@ def test_is_valid_settings():
     assert utils.is_valid_settings(settings) is True
     settings = {"adjust_longitude_fname": 1}
     assert utils.is_valid_settings(settings) is False
+    settings = {"adjust_longitude_fname": None}
+    assert utils.is_valid_settings(settings) is False
+    settings = {"adjust_longitude_fname": ""}
+    assert utils.is_valid_settings(settings) is True
     settings = {"adjust_longitude": True}
     assert utils.is_valid_settings(settings) is False
     settings = {"adjust_longitude": True, "adjust_longitude_fname": "test"}

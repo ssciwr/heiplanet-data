@@ -1223,58 +1223,58 @@ def _apply_preprocessing(
 
     # define steps with common structure
     pp_common_steps = [
-        dict(
-            condition=lambda ds: unify_coords,
-            message="Renaming coordinates to unify them across datasets...",
-            transform=lambda ds: rename_coords(ds, uni_coords),
-            suffix=unify_coords_fname,
-        ),
-        dict(
-            condition=lambda ds: adjust_longitude
+        {
+            "condition": lambda ds: unify_coords,
+            "message": "Renaming coordinates to unify them across datasets...",
+            "transform": lambda ds: rename_coords(ds, uni_coords),
+            "suffix": unify_coords_fname,
+        },
+        {
+            "condition": lambda ds: adjust_longitude
             and adjust_longitude_vname in ds.coords,
-            message="Adjusting longitude from 0-360 to -180-180...",
-            transform=lambda ds: adjust_longitude_360_to_180(
+            "message": "Adjusting longitude from 0-360 to -180-180...",
+            "transform": lambda ds: adjust_longitude_360_to_180(
                 ds, lon_name=adjust_longitude_vname
             ),  # only consider full map for now, i.e. limited_area=False
-            suffix=adjust_longitude_fname,
-        ),
-        dict(
-            condition=lambda ds: convert_kelvin_to_celsius
+            "suffix": adjust_longitude_fname,
+        },
+        {
+            "condition": lambda ds: convert_kelvin_to_celsius
             and convert_kelvin_to_celsius_vname in ds.data_vars,
-            message="Converting temperature from Kelvin to Celsius...",
-            transform=lambda ds: convert_to_celsius_with_attributes(
+            "message": "Converting temperature from Kelvin to Celsius...",
+            "transform": lambda ds: convert_to_celsius_with_attributes(
                 ds, var_name=convert_kelvin_to_celsius_vname
             ),
-            suffix=convert_kelvin_to_celsius_fname,
-        ),
-        dict(
-            condition=lambda ds: convert_m_to_mm_precipitation
+            "suffix": convert_kelvin_to_celsius_fname,
+        },
+        {
+            "condition": lambda ds: convert_m_to_mm_precipitation
             and convert_m_to_mm_precipitation_vname in ds.data_vars,
-            message="Converting precipitation from meters to millimeters...",
-            transform=lambda ds: convert_m_to_mm_with_attributes(
+            "message": "Converting precipitation from meters to millimeters...",
+            "transform": lambda ds: convert_m_to_mm_with_attributes(
                 ds, var_name=convert_m_to_mm_precipitation_vname
             ),
-            suffix=convert_m_to_mm_precipitation_fname,
-        ),
-        dict(
-            condition=lambda ds: cal_monthly_tp
+            "suffix": convert_m_to_mm_precipitation_fname,
+        },
+        {
+            "condition": lambda ds: cal_monthly_tp
             and all(
                 (
                     cal_monthly_tp_vname in ds.data_vars,
                     cal_monthly_tp_tcoord in ds.coords,
                 )
             ),
-            message=(
+            "message": (
                 "Calculating monthly total precipitation = "
                 "downloaded data * number of days in month..."
             ),
-            transform=lambda ds: calculate_monthly_precipitation(
+            "transform": lambda ds: calculate_monthly_precipitation(
                 ds,
                 var_name=cal_monthly_tp_vname,
                 time_coord=cal_monthly_tp_tcoord,
             ),
-            suffix=cal_monthly_tp_fname,
-        ),
+            "suffix": cal_monthly_tp_fname,
+        },
     ]
 
     # apply common steps
@@ -1282,7 +1282,7 @@ def _apply_preprocessing(
         dataset, file_name_base = apply_step(dataset, file_name_base, step, logger)
 
     # handle complex steps separately
-    if resample_grid and lat_name in dataset.coords and lon_name in dataset.coords:
+    if resample_grid and all((lat_name in dataset.coords, lon_name in dataset.coords)):
         logger.info("Resampling grid to a new resolution...")
         dataset = resample_resolution(
             dataset,
@@ -1319,9 +1319,8 @@ def _apply_preprocessing(
 
         min_year = truncate_date_from[:4]
         max_time = dataset[truncate_date_vname].max().values
-        max_year = (
-            truncate_date_to[:4] if truncate_date_to else np.datetime64(max_time, "Y")
-        )
+        end_date = truncate_date_to or max_time
+        max_year = np.datetime64(end_date, "Y")
         file_name_base += f"_{min_year}-{max_year}"
 
     return dataset, file_name_base
