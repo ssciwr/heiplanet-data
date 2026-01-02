@@ -12,7 +12,10 @@ import tempfile
 import textwrap
 from cdo import Cdo
 from dataclasses import dataclass
+import logging
 
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=Union[np.float64, xr.DataArray])
 warn_positive_resolution = "New resolution must be a positive number."
@@ -1197,40 +1200,90 @@ def _apply_preprocessing(
     cal_monthly_tp_tcoord = settings.get("cal_monthly_tp_tcoord")
     cal_monthly_tp_fname = settings.get("cal_monthly_tp_fname")
 
-    if unify_coords:
-        print("Renaming coordinates to unify them across datasets...")
-        dataset = rename_coords(dataset, uni_coords)
-        file_name_base += f"_{unify_coords_fname}"
+    # define helper function
+    def apply_step(
+        ds: xr.Dataset,
+        fname_base: str,
+        step: Dict[str, Any],
+        logger: logging.Logger,
+    ) -> Tuple[xr.Dataset, str]:
+        """Apply a preprocessing step to the dataset and update the file name."""
+        if not step["condition"](ds):
+            return ds, fname_base
 
-    if adjust_longitude and adjust_longitude_vname in dataset.coords:
-        print("Adjusting longitude from 0-360 to -180-180...")
-        dataset = adjust_longitude_360_to_180(
-            dataset, lon_name=adjust_longitude_vname
-        )  # only consider full map for now, i.e. limited_area=False
-        file_name_base += f"_{adjust_longitude_fname}"
+        logger.info(step["message"])
+        ds = step["transform"](ds)
 
-    if (
-        convert_kelvin_to_celsius
-        and convert_kelvin_to_celsius_vname in dataset.data_vars
-    ):
-        print("Converting temperature from Kelvin to Celsius...")
-        dataset = convert_to_celsius_with_attributes(
-            dataset, var_name=convert_kelvin_to_celsius_vname
-        )
-        file_name_base += f"_{convert_kelvin_to_celsius_fname}"
+        suffix = step.get("suffix")
 
-    if (
-        convert_m_to_mm_precipitation
-        and convert_m_to_mm_precipitation_vname in dataset.data_vars
-    ):
-        print("Converting precipitation from meters to millimeters...")
-        dataset = convert_m_to_mm_with_attributes(
-            dataset, var_name=convert_m_to_mm_precipitation_vname
-        )
-        file_name_base += f"_{convert_m_to_mm_precipitation_fname}"
+        if suffix:
+            fname_base += f"_{suffix}"
 
+        return ds, fname_base
+
+    # define steps with common structure
+    pp_common_steps = [
+        dict(
+            condition=lambda ds: unify_coords,
+            message="Renaming coordinates to unify them across datasets...",
+            transform=lambda ds: rename_coords(ds, uni_coords),
+            suffix=unify_coords_fname,
+        ),
+        dict(
+            condition=lambda ds: adjust_longitude
+            and adjust_longitude_vname in ds.coords,
+            message="Adjusting longitude from 0-360 to -180-180...",
+            transform=lambda ds: adjust_longitude_360_to_180(
+                ds, lon_name=adjust_longitude_vname
+            ),  # only consider full map for now, i.e. limited_area=False
+            suffix=adjust_longitude_fname,
+        ),
+        dict(
+            condition=lambda ds: convert_kelvin_to_celsius
+            and convert_kelvin_to_celsius_vname in ds.data_vars,
+            message="Converting temperature from Kelvin to Celsius...",
+            transform=lambda ds: convert_to_celsius_with_attributes(
+                ds, var_name=convert_kelvin_to_celsius_vname
+            ),
+            suffix=convert_kelvin_to_celsius_fname,
+        ),
+        dict(
+            condition=lambda ds: convert_m_to_mm_precipitation
+            and convert_m_to_mm_precipitation_vname in ds.data_vars,
+            message="Converting precipitation from meters to millimeters...",
+            transform=lambda ds: convert_m_to_mm_with_attributes(
+                ds, var_name=convert_m_to_mm_precipitation_vname
+            ),
+            suffix=convert_m_to_mm_precipitation_fname,
+        ),
+        dict(
+            condition=lambda ds: cal_monthly_tp
+            and all(
+                (
+                    cal_monthly_tp_vname in ds.data_vars,
+                    cal_monthly_tp_tcoord in ds.coords,
+                )
+            ),
+            message=(
+                "Calculating monthly total precipitation = "
+                "downloaded data * number of days in month..."
+            ),
+            transform=lambda ds: calculate_monthly_precipitation(
+                ds,
+                var_name=cal_monthly_tp_vname,
+                time_coord=cal_monthly_tp_tcoord,
+            ),
+            suffix=cal_monthly_tp_fname,
+        ),
+    ]
+
+    # apply common steps
+    for step in pp_common_steps:
+        dataset, file_name_base = apply_step(dataset, file_name_base, step, logger)
+
+    # handle complex steps separately
     if resample_grid and lat_name in dataset.coords and lon_name in dataset.coords:
-        print("Resampling grid to a new resolution...")
+        logger.info("Resampling grid to a new resolution...")
         dataset = resample_resolution(
             dataset,
             resolution_config=ResolutionConfig(
@@ -1256,7 +1309,7 @@ def _apply_preprocessing(
         file_name_base += f"_{degree_str}{resample_grid_fname}"
 
     if truncate_date and truncate_date_vname in dataset.coords:
-        print("Truncating data from a specific start date...")
+        logger.info("Truncating data from a specific start date...")
         dataset = truncate_data_by_time(
             dataset,
             start_date=truncate_date_from,
@@ -1270,23 +1323,6 @@ def _apply_preprocessing(
             truncate_date_to[:4] if truncate_date_to else np.datetime64(max_time, "Y")
         )
         file_name_base += f"_{min_year}-{max_year}"
-
-    if cal_monthly_tp and all(
-        (
-            cal_monthly_tp_vname in dataset.data_vars,
-            cal_monthly_tp_tcoord in dataset.coords,
-        )
-    ):
-        print(
-            "Calculating monthly total precipitation = "
-            "downloaded data * number of days in month..."
-        )
-        dataset = calculate_monthly_precipitation(
-            dataset,
-            var_name=cal_monthly_tp_vname,
-            time_coord=cal_monthly_tp_tcoord,
-        )
-        file_name_base += f"_{cal_monthly_tp_fname}"
 
     return dataset, file_name_base
 
@@ -1347,7 +1383,7 @@ def preprocess_data_file(
         # save the processed dataset
         output_file = folder_path / f"{file_name_base}_{unique_tag}{file_ext}"
         dataset.to_netcdf(output_file, mode="w", format="NETCDF4")
-        print(f"Processed dataset saved to: {output_file}")
+        logger.info(f"Processed dataset saved to: {output_file}")
         return dataset, str(output_file.name)
 
 
@@ -1500,7 +1536,7 @@ def aggregate_data_by_nuts(
     first_merge = True
     for ds_name, file_info in netcdf_files.items():
         file_path, agg_dict = file_info
-        print(f"Processing NetCDF file: {file_path}")
+        logger.info(f"Processing NetCDF file: {file_path}")
 
         nc_data_agg, r_var_names = _aggregate_netcdf_nuts(
             nuts_data,
@@ -1550,6 +1586,6 @@ def aggregate_data_by_nuts(
         output_dir = nuts_file.parent
     output_file = output_dir / out_file_name
     ds_out.to_netcdf(output_file, mode="w")
-    print(f"Aggregated data saved to: {output_file}")
+    logger.info(f"Aggregated data saved to: {output_file}")
 
     return output_file
