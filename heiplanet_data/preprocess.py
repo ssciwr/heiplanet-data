@@ -1170,8 +1170,7 @@ def _apply_preprocessing(
 
     resample_grid = settings.get("resample_grid", False)
     resample_grid_vname = settings.get("resample_grid_vname")
-    lat_name = resample_grid_vname[0] if resample_grid_vname else None
-    lon_name = resample_grid_vname[1] if resample_grid_vname else None
+    lat_name, lon_name = resample_grid_vname if resample_grid_vname else (None, None)
     resample_grid_fname = settings.get("resample_grid_fname")
     resample_degree = settings.get("resample_degree")
     downsample_agg_funcs = settings.get("downsample_agg_funcs", None)
@@ -1272,10 +1271,11 @@ def _apply_preprocessing(
         )
         file_name_base += f"_{min_year}-{max_year}"
 
-    if (
-        cal_monthly_tp
-        and cal_monthly_tp_vname in dataset.data_vars
-        and cal_monthly_tp_tcoord in dataset.coords
+    if cal_monthly_tp and all(
+        (
+            cal_monthly_tp_vname in dataset.data_vars,
+            cal_monthly_tp_tcoord in dataset.coords,
+        )
     ):
         print(
             "Calculating monthly total precipitation = "
