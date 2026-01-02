@@ -75,28 +75,30 @@
             "default": "deg_trim",
             "description": "Suffix of file names after resampling the grid."
         },
-        "resample_agg_funcs": {
+        "downsample_agg_funcs": {
             "type": "object",
             "patternProperties": {
                 "^.*$": {
                     "type": "string"
                 }
             },
-            "description": "Aggregation functions for each variable during resampling."
+            "default": null,
+            "description": "Aggregation function for each variable during downsampling."
         },
-        "resample_upsample_method_map": {
+        "upsample_method_map": {
             "type": "object",
             "patternProperties": {
                 "^.*$": {
                     "type": "string"
                 }
             },
-            "description": "Upsampling methods for each variable during resampling."
+            "default": null,
+            "description": "Mapping method for each variable during upsampling."
         },
         "downsample_max_lon_xarray": {
             "type": "number",
             "default": 179.75,
-            "description": "Expected maximum longitude value after resampling with xarray to match population data."
+            "description": "Expected maximum longitude value after downsampling with xarray to match population data."
         },
         "downsample_lib": {
             "type": "string",
@@ -106,33 +108,39 @@
         },
         "downsample_new_min_lat": {
             "type": "number",
-            "description": "Minimum latitude of the new grid."
+            "default": null,
+            "description": "Minimum latitude of the new grid. Used for xesmf and cdo downsampling."
         },
         "downsample_new_max_lat": {
             "type": "number",
-            "description": "Maximum latitude of the new grid."
+            "default": null,
+            "description": "Maximum latitude of the new grid. Used for xesmf downsampling."
         },
         "downsample_new_min_lon": {
             "type": "number",
-            "description": "Minimum longitude of the new grid."
+            "default": null,
+            "description": "Minimum longitude of the new grid. Used for xesmf and cdo downsampling."
         },
         "downsample_new_max_lon": {
             "type": "number",
-            "description": "Maximum longitude of the new grid."
+            "default": null,
+            "description": "Maximum longitude of the new grid. Used for xesmf downsampling."
         },
         "downsample_new_lat_size": {
             "type": "integer",
-            "description": "Number of latitude points in the new grid."
+            "default": null,
+            "description": "Number of latitude points in the new grid. Used for cdo downsampling."
         },
         "downsample_new_lon_size": {
             "type": "integer",
-            "description": "Number of longitude points in the new grid."
+            "default": null,
+            "description": "Number of longitude points in the new grid. Used for cdo downsampling."
         },
         "downsample_gridtype": {
             "type": "string",
             "enum": ["gaussian", "lonlat", "curvilinear", "unstructured"],
             "default": "lonlat",
-            "description": "Type of the grid for downsampling with CDO."
+            "description": "Type of the grid for downsampling with cdo. Options are 'gaussian', 'lonlat', 'curvilinear', or 'unstructured'."
         },
         "truncate_date": {
             "type": "boolean",
@@ -177,6 +185,26 @@
                 "valid_time": "time"
             },
             "description": "Mapping of variable names to their new names."
+        },
+        "cal_monthly_tp": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to calculate monthly total precipitation based on data downloaded from ERA5-Land monthly data. The real precipitation of the month = downloaded value * number of days in the month."
+        },
+        "cal_monthly_tp_vname": {
+            "type": "string",
+            "default": "tp",
+            "description": "Variable name of the precipitation values to calculate monthly total precipitation."
+        },
+        "cal_monthly_tp_tcoord": {
+            "type": "string",
+            "default": "time",
+            "description": "Time coordinate name of the precipitation variable."
+        },
+        "cal_monthly_tp_fname": {
+            "type": "string",
+            "default": "montp",
+            "description": "Suffix of file names after calculating monthly total precipitation."
         }
     },
     "additionalProperties": false,
@@ -245,6 +273,17 @@
             },
             "then": {
                 "required": ["unify_coords_fname", "uni_coords"]
+            }
+        },
+        {
+            "if": {
+                "required": ["cal_monthly_tp"],
+                "properties": {
+                    "cal_monthly_tp": { "const": true }
+                }
+            },
+            "then": {
+                "required": ["cal_monthly_tp_vname", "cal_monthly_tp_tcoord", "cal_monthly_tp_fname"]
             }
         }
     ]
