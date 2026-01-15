@@ -10,3 +10,6 @@ scipy
 isimip-client
 xesmf
 cdo
+xagg
+exactextract
+rioxarray
