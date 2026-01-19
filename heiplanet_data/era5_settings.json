@@ -14,5 +14,9 @@
     "unify_coords_fname": "unicoords",
     "uni_coords": {
         "valid_time": "time"
-    }
+    },
+    "cal_monthly_tp": true,
+    "cal_monthly_tp_vname": "tp",
+    "cal_monthly_tp_tcoord": "time",
+    "cal_monthly_tp_fname": "montp"
 }

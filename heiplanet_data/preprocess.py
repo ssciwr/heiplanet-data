@@ -12,9 +12,12 @@ import tempfile
 import textwrap
 from cdo import Cdo
 from dataclasses import dataclass
+import logging
 import exactextract as ee
 from functools import reduce
 
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=Union[np.float64, xr.DataArray])
 warn_positive_resolution = "New resolution must be a positive number."
@@ -107,7 +110,7 @@ def convert_to_celsius(temperature_kelvin: T) -> T:
 
 def convert_to_celsius_with_attributes(
     dataset: xr.Dataset,
-    inplace: bool = False,
+    inplace: bool = True,
     var_name: str = "t2m",
 ) -> xr.Dataset:
     """Convert temperature from Kelvin to Celsius and keep attributes.
@@ -115,7 +118,7 @@ def convert_to_celsius_with_attributes(
     Args:
         dataset (xr.Dataset): Dataset containing temperature in Kelvin.
         inplace (bool): If True, modify the original dataset.
-            If False, return a new dataset. Default is False.
+            If False, return a new dataset. Default is True.
         var_name (str): Name of the temperature variable in the dataset.
             Default is "t2m".
 
@@ -193,14 +196,14 @@ def convert_m_to_mm(precipitation: T) -> T:
 
 
 def convert_m_to_mm_with_attributes(
-    dataset: xr.Dataset, inplace: bool = False, var_name: str = "tp"
+    dataset: xr.Dataset, inplace: bool = True, var_name: str = "tp"
 ) -> xr.Dataset:
     """Convert precipitation from meters to millimeters and keep attributes.
 
     Args:
         dataset (xr.Dataset): Dataset containing precipitation in meters.
         inplace (bool): If True, modify the original dataset.
-            If False, return a new dataset. Default is False.
+            If False, return a new dataset. Default is True.
         var_name (str): Name of the precipitation variable in the dataset.
             Default is "tp".
 
@@ -814,7 +817,7 @@ class ResolutionConfig:
         lon_name (str): Name of the longitude coordinate. Default is "longitude".
         downsample_lib (Literal["xarray", "xesmf", "cdo"]): Library to use for downsampling.
             Options are "xarray", "xesmf", or "cdo". Default is "xesmf".
-        agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
+        downsample_agg_funcs (Dict[str, str] | None): Aggregation function for each variable.
             If None, default aggregation of corresponding library is used. Default is None.
         upsample_method_map (Dict[str, str] | None): Mapping of variable names to
             interpolation methods. If None, linear interpolation is used. Default is None.
@@ -824,7 +827,7 @@ class ResolutionConfig:
     lat_name: str = "latitude"
     lon_name: str = "longitude"
     downsample_lib: Literal["xarray", "xesmf", "cdo"] = "xesmf"
-    agg_funcs: Dict[str, str] | None = None
+    downsample_agg_funcs: Dict[str, str] | None = None
     upsample_method_map: Dict[str, str] | None = None
 
 
@@ -883,7 +886,7 @@ def resample_resolution(
     lat_name = resolution_config.lat_name
     lon_name = resolution_config.lon_name
     downsample_lib = resolution_config.downsample_lib
-    agg_funcs = resolution_config.agg_funcs
+    downsample_agg_funcs = resolution_config.downsample_agg_funcs
     upsample_method_map = resolution_config.upsample_method_map
 
     expected_longitude_max = grid_config.expected_longitude_max_xarray
@@ -912,7 +915,7 @@ def resample_resolution(
                 new_resolution=new_resolution,
                 lat_name=lat_name,
                 lon_name=lon_name,
-                agg_funcs=agg_funcs,
+                agg_funcs=downsample_agg_funcs,
             )
             return align_lon_lat_with_popu_data(
                 dataset,
@@ -930,7 +933,7 @@ def resample_resolution(
                 new_max_lon=new_max_lon,
                 lat_name=lat_name,
                 lon_name=lon_name,
-                agg_funcs=agg_funcs,
+                agg_funcs=downsample_agg_funcs,
             )
         elif downsample_lib == "cdo":
             return downsample_resolution_with_cdo(
@@ -942,7 +945,7 @@ def resample_resolution(
                 new_lon_size=new_lon_size,
                 lat_name=lat_name,
                 lon_name=lon_name,
-                agg_funcs=agg_funcs,
+                agg_funcs=downsample_agg_funcs,
                 gridtype=gridtype,
             )
         else:
@@ -1059,6 +1062,62 @@ def truncate_data_by_time(
     return dataset.sel({var_name: slice(start_date, end_date)})
 
 
+def _check_month_start_data(times: xr.DataArray) -> bool:
+    """Check if all time points are at the start of the month.
+    E.g. 2016-01-01, 2016-02-01, ..., 2017-01-01, 2018-01-01 ...
+
+    Args:
+        times (xr.DataArray): Time coordinate to check.
+
+    Returns:
+        bool: True if all time points are at the start of the month, False otherwise.
+    """
+    days = times.dt.day.values
+
+    # check if all days are 1
+    if not np.all(days == 1):
+        return False
+
+    return True
+
+
+def calculate_monthly_precipitation(
+    dataset: xr.Dataset, var_name: str = "tp", time_coord: str = "time"
+) -> xr.Dataset:
+    """Calculate monthly total precipitation from data downloaded from ERA5-Land monthly data.
+    The real precipitation of the month = downloaded value * number of days in the month.
+
+    Args:
+        dataset (xr.Dataset): Dataset with total precipitation data.
+        var_name (str): Name of the precipitation variable in the dataset. Default is "tp".
+        time_coord (str): Name of the time coordinate in the dataset. Default is "time".
+
+    Returns:
+        xr.Dataset: Dataset with monthly total precipitation values.
+    """
+    # check inputs
+    if time_coord not in dataset.coords:
+        raise ValueError(f"Time coordinate '{time_coord}' not found in dataset.")
+
+    if var_name not in dataset.data_vars:
+        raise ValueError(f"Variable '{var_name}' not found in dataset.")
+
+    times = dataset[time_coord]
+
+    if not _check_month_start_data(times):
+        raise ValueError("The dataset does not have month start data.")
+
+    # calculate number of days in each month
+    days_in_month = times.dt.days_in_month
+
+    # calculate monthly total precipitation
+    org_attrs = dataset[var_name].attrs.copy()
+    dataset[var_name] = dataset[var_name] * days_in_month
+    dataset[var_name].attrs = org_attrs
+
+    return dataset
+
+
 def _replace_decimal_point(degree: float) -> str:
     """Replace the decimal point in a degree string with 'p'
     if the degree is greater than or equal to 1.0,
@@ -1116,12 +1175,11 @@ def _apply_preprocessing(
 
     resample_grid = settings.get("resample_grid", False)
     resample_grid_vname = settings.get("resample_grid_vname")
-    lat_name = resample_grid_vname[0] if resample_grid_vname else None
-    lon_name = resample_grid_vname[1] if resample_grid_vname else None
+    lat_name, lon_name = resample_grid_vname if resample_grid_vname else (None, None)
     resample_grid_fname = settings.get("resample_grid_fname")
     resample_degree = settings.get("resample_degree")
-    resample_agg_funcs = settings.get("resample_agg_funcs", None)
-    resample_upsample_method_map = settings.get("resample_upsample_method_map", None)
+    downsample_agg_funcs = settings.get("downsample_agg_funcs", None)
+    upsample_method_map = settings.get("upsample_method_map", None)
     resample_expected_longitude_max = settings.get(
         "downsample_max_lon_xarray", np.float64(179.75)
     )
@@ -1139,40 +1197,95 @@ def _apply_preprocessing(
     truncate_date_to = settings.get("truncate_date_to")
     truncate_date_vname = settings.get("truncate_date_vname")
 
-    if unify_coords:
-        print("Renaming coordinates to unify them across datasets...")
-        dataset = rename_coords(dataset, uni_coords)
-        file_name_base += f"_{unify_coords_fname}"
+    cal_monthly_tp = settings.get("cal_monthly_tp", False)
+    cal_monthly_tp_vname = settings.get("cal_monthly_tp_vname")
+    cal_monthly_tp_tcoord = settings.get("cal_monthly_tp_tcoord")
+    cal_monthly_tp_fname = settings.get("cal_monthly_tp_fname")
 
-    if adjust_longitude and adjust_longitude_vname in dataset.coords:
-        print("Adjusting longitude from 0-360 to -180-180...")
-        dataset = adjust_longitude_360_to_180(
-            dataset, lon_name=adjust_longitude_vname
-        )  # only consider full map for now, i.e. limited_area=False
-        file_name_base += f"_{adjust_longitude_fname}"
+    # define helper function
+    def apply_step(
+        ds: xr.Dataset,
+        fname_base: str,
+        step: Dict[str, Any],
+        logger: logging.Logger,
+    ) -> Tuple[xr.Dataset, str]:
+        """Apply a preprocessing step to the dataset and update the file name."""
+        if not step["condition"](ds):
+            return ds, fname_base
 
-    if (
-        convert_kelvin_to_celsius
-        and convert_kelvin_to_celsius_vname in dataset.data_vars
-    ):
-        print("Converting temperature from Kelvin to Celsius...")
-        dataset = convert_to_celsius_with_attributes(
-            dataset, var_name=convert_kelvin_to_celsius_vname
-        )
-        file_name_base += f"_{convert_kelvin_to_celsius_fname}"
+        logger.info(step["message"])
+        ds = step["transform"](ds)
 
-    if (
-        convert_m_to_mm_precipitation
-        and convert_m_to_mm_precipitation_vname in dataset.data_vars
-    ):
-        print("Converting precipitation from meters to millimeters...")
-        dataset = convert_m_to_mm_with_attributes(
-            dataset, var_name=convert_m_to_mm_precipitation_vname
-        )
-        file_name_base += f"_{convert_m_to_mm_precipitation_fname}"
+        suffix = step.get("suffix")
 
-    if resample_grid and lat_name in dataset.coords and lon_name in dataset.coords:
-        print("Resampling grid to a new resolution...")
+        if suffix:
+            fname_base += f"_{suffix}"
+
+        return ds, fname_base
+
+    # define steps with common structure
+    pp_common_steps = [
+        {
+            "condition": lambda ds: unify_coords,
+            "message": "Renaming coordinates to unify them across datasets...",
+            "transform": lambda ds: rename_coords(ds, uni_coords),
+            "suffix": unify_coords_fname,
+        },
+        {
+            "condition": lambda ds: adjust_longitude
+            and adjust_longitude_vname in ds.coords,
+            "message": "Adjusting longitude from 0-360 to -180-180...",
+            "transform": lambda ds: adjust_longitude_360_to_180(
+                ds, lon_name=adjust_longitude_vname
+            ),  # only consider full map for now, i.e. limited_area=False
+            "suffix": adjust_longitude_fname,
+        },
+        {
+            "condition": lambda ds: convert_kelvin_to_celsius
+            and convert_kelvin_to_celsius_vname in ds.data_vars,
+            "message": "Converting temperature from Kelvin to Celsius...",
+            "transform": lambda ds: convert_to_celsius_with_attributes(
+                ds, var_name=convert_kelvin_to_celsius_vname
+            ),
+            "suffix": convert_kelvin_to_celsius_fname,
+        },
+        {
+            "condition": lambda ds: convert_m_to_mm_precipitation
+            and convert_m_to_mm_precipitation_vname in ds.data_vars,
+            "message": "Converting precipitation from meters to millimeters...",
+            "transform": lambda ds: convert_m_to_mm_with_attributes(
+                ds, var_name=convert_m_to_mm_precipitation_vname
+            ),
+            "suffix": convert_m_to_mm_precipitation_fname,
+        },
+        {
+            "condition": lambda ds: cal_monthly_tp
+            and all(
+                (
+                    cal_monthly_tp_vname in ds.data_vars,
+                    cal_monthly_tp_tcoord in ds.coords,
+                )
+            ),
+            "message": (
+                "Calculating monthly total precipitation = "
+                "downloaded data * number of days in month..."
+            ),
+            "transform": lambda ds: calculate_monthly_precipitation(
+                ds,
+                var_name=cal_monthly_tp_vname,
+                time_coord=cal_monthly_tp_tcoord,
+            ),
+            "suffix": cal_monthly_tp_fname,
+        },
+    ]
+
+    # apply common steps
+    for step in pp_common_steps:
+        dataset, file_name_base = apply_step(dataset, file_name_base, step, logger)
+
+    # handle complex steps separately
+    if resample_grid and all((lat_name in dataset.coords, lon_name in dataset.coords)):
+        logger.info("Resampling grid to a new resolution...")
         dataset = resample_resolution(
             dataset,
             resolution_config=ResolutionConfig(
@@ -1180,8 +1293,8 @@ def _apply_preprocessing(
                 lat_name=lat_name,
                 lon_name=lon_name,
                 downsample_lib=downsample_lib,
-                agg_funcs=resample_agg_funcs,
-                upsample_method_map=resample_upsample_method_map,
+                downsample_agg_funcs=downsample_agg_funcs,
+                upsample_method_map=upsample_method_map,
             ),
             grid_config=GridConfig(
                 expected_longitude_max_xarray=resample_expected_longitude_max,
@@ -1198,7 +1311,7 @@ def _apply_preprocessing(
         file_name_base += f"_{degree_str}{resample_grid_fname}"
 
     if truncate_date and truncate_date_vname in dataset.coords:
-        print("Truncating data from a specific start date...")
+        logger.info("Truncating data from a specific start date...")
         dataset = truncate_data_by_time(
             dataset,
             start_date=truncate_date_from,
@@ -1208,9 +1321,8 @@ def _apply_preprocessing(
 
         min_year = truncate_date_from[:4]
         max_time = dataset[truncate_date_vname].max().values
-        max_year = (
-            truncate_date_to[:4] if truncate_date_to else np.datetime64(max_time, "Y")
-        )
+        end_date = truncate_date_to or max_time
+        max_year = np.datetime64(end_date, "Y")
         file_name_base += f"_{min_year}-{max_year}"
 
     return dataset, file_name_base
@@ -1272,7 +1384,7 @@ def preprocess_data_file(
         # save the processed dataset
         output_file = folder_path / f"{file_name_base}_{unique_tag}{file_ext}"
         dataset.to_netcdf(output_file, mode="w", format="NETCDF4")
-        print(f"Processed dataset saved to: {output_file}")
+        logger.info(f"Processed dataset saved to: {output_file}")
         return dataset, str(output_file.name)
 
 
@@ -1596,7 +1708,7 @@ def aggregate_data_by_nuts(
     first_merge = True
     for ds_name, file_info in netcdf_files.items():
         file_path, agg_dict = file_info
-        print(f"Processing NetCDF file: {file_path}")
+        logger.info(f"Processing NetCDF file: {file_path}")
 
         if agg_lib == "geopandas":
             nc_data_agg, r_var_names = _aggregate_netcdf_nuts_gpd(
@@ -1674,6 +1786,6 @@ def aggregate_data_by_nuts(
         output_dir = nuts_file.parent
     output_file = output_dir / out_file_name
     ds_out.to_netcdf(output_file, mode="w")
-    print(f"Aggregated data saved to: {output_file}")
+    logger.info(f"Aggregated data saved to: {output_file}")
 
     return output_file

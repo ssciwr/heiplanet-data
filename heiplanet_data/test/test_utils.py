@@ -37,6 +37,10 @@ def test_is_valid_settings():
     assert utils.is_valid_settings(settings) is True
     settings = {"adjust_longitude_fname": 1}
     assert utils.is_valid_settings(settings) is False
+    settings = {"adjust_longitude_fname": None}
+    assert utils.is_valid_settings(settings) is False
+    settings = {"adjust_longitude_fname": ""}
+    assert utils.is_valid_settings(settings) is True
     settings = {"adjust_longitude": True}
     assert utils.is_valid_settings(settings) is False
     settings = {"adjust_longitude": True, "adjust_longitude_fname": "test"}
@@ -163,6 +167,24 @@ def test_is_valid_settings():
     settings = {"unify_coords": True}
     assert utils.is_valid_settings(settings) is False
     settings = {"unify_coords": True, "unify_coords_fname": "test"}
+    assert utils.is_valid_settings(settings) is False
+
+    settings = {
+        "cal_monthly_tp": True,
+        "cal_monthly_tp_vname": "tp",
+        "cal_monthly_tp_tcoord": "time",
+        "cal_monthly_tp_fname": "montp",
+    }
+    assert utils.is_valid_settings(settings) is True
+    settings = {"cal_monthly_tp": "error"}
+    assert utils.is_valid_settings(settings) is False
+    settings = {"cal_monthly_tp": True}
+    assert utils.is_valid_settings(settings) is False
+    settings = {"cal_monthly_tp_vname": 1}
+    assert utils.is_valid_settings(settings) is False
+    settings = {"cal_monthly_tp_tcoord": True}
+    assert utils.is_valid_settings(settings) is False
+    settings = {"cal_monthly_tp_fname": {}}
     assert utils.is_valid_settings(settings) is False
 
 

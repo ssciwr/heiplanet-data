@@ -954,7 +954,7 @@ def test_resample_resolution(get_dataset):
         resolution_config=preprocess.ResolutionConfig(
             new_resolution=1.0,
             downsample_lib="cdo",
-            agg_funcs={"t2m": "nn", "tp": "nn"},
+            downsample_agg_funcs={"t2m": "nn", "tp": "nn"},
         ),
         grid_config=preprocess.GridConfig(
             new_min_lat=0.0,
@@ -1138,6 +1138,65 @@ def test_truncate_data_by_time(get_dataset):
     assert truncated_dataset["t2m"].time.values[0] == np.datetime64("2025-01-01")
 
 
+def test_check_month_start_data():
+    months = ["2016-01-01", "2016-03-01"]
+    data = xr.DataArray(
+        data=np.array(months, dtype="datetime64[ns]"),
+        dims=["time"],
+    )
+    assert preprocess._check_month_start_data(data) is True
+
+    # invalid case
+    months = ["2016-01-15", "2016-03-01"]
+    data = xr.DataArray(
+        data=np.array(months, dtype="datetime64[ns]"),
+        dims=["time"],
+    )
+    assert preprocess._check_month_start_data(data) is False
+
+
+def test_calculate_monthly_precipitation_invalid(get_dataset):
+    with pytest.raises(ValueError):
+        preprocess.calculate_monthly_precipitation(
+            get_dataset, var_name="error", time_coord="time"
+        )
+    with pytest.raises(ValueError):
+        preprocess.calculate_monthly_precipitation(
+            get_dataset, var_name="tp", time_coord="error"
+        )
+    # modify time to non-monthly start dates
+    get_dataset_invalid = get_dataset.copy()
+    get_dataset_invalid = get_dataset_invalid.assign_coords(
+        time=("time", [np.datetime64("2024-01-15"), np.datetime64("2025-02-15")])
+    )
+    with pytest.raises(ValueError):
+        preprocess.calculate_monthly_precipitation(
+            get_dataset_invalid, var_name="tp", time_coord="time"
+        )
+
+
+def test_calculate_monthly_precipitation(get_dataset):
+    org_ds = get_dataset.copy()
+    # change time to get different days in month
+    get_dataset = get_dataset.assign_coords(
+        time=("time", [np.datetime64("2024-01-01"), np.datetime64("2024-02-01")])
+    )
+    # calculate monthly precipitation
+    monthly_dataset = preprocess.calculate_monthly_precipitation(
+        get_dataset, var_name="tp", time_coord="time"
+    )
+
+    assert len(monthly_dataset["tp"].time) == 2
+    assert monthly_dataset["tp"].time.values[0] == np.datetime64("2024-01-01")
+    assert monthly_dataset["tp"].time.values[1] == np.datetime64("2024-02-01")
+
+    expected_tp = org_ds["tp"].values * np.array([31, 29])[:, None, None]
+    assert np.allclose(
+        monthly_dataset["tp"].values,
+        expected_tp,
+    )
+
+
 def test_replace_decimal_point():
     assert preprocess._replace_decimal_point(1.0) == "1p0"
     assert preprocess._replace_decimal_point(1.234) == "1p234"
@@ -1191,6 +1250,7 @@ def test_apply_preprocessing_adjust_longitude(get_dataset):
 
 
 def test_apply_preprocessing_convert_to_celsius(get_dataset):
+    org_ds = get_dataset.copy()
     fname_base = "test_data"
 
     settings = {
@@ -1204,7 +1264,7 @@ def test_apply_preprocessing_convert_to_celsius(get_dataset):
     )
 
     # check if the temperature is converted to Celsius
-    expected_t2m = get_dataset["t2m"] - 273.15
+    expected_t2m = org_ds["t2m"] - 273.15  # default inplace
     assert np.allclose(preprocessed_dataset["t2m"].values, expected_t2m.values)
 
     # check if file name is updated
@@ -1212,6 +1272,7 @@ def test_apply_preprocessing_convert_to_celsius(get_dataset):
 
 
 def test_apply_preprocessing_convert_m_to_mm(get_dataset):
+    org_ds = get_dataset.copy()
     fname_base = "test_data"
 
     settings = {
@@ -1225,7 +1286,7 @@ def test_apply_preprocessing_convert_m_to_mm(get_dataset):
     )
 
     # check if the precipitation is converted to mm
-    expected_tp = get_dataset["tp"] * 1000.0
+    expected_tp = org_ds["tp"] * 1000.0  # default inplace
     assert np.allclose(preprocessed_dataset["tp"].values, expected_tp.values)
 
     # check if file name is updated
@@ -1394,6 +1455,27 @@ def test_apply_preprocessing_truncate(get_dataset):
 
     # check if file name is updated
     assert updated_fname == f"{fname_base}_2025-2025"
+
+
+def test_apply_preprocessing_calculate_monthly_precipitation(get_dataset):
+    fname_base = "test_data"
+
+    settings = {
+        "cal_monthly_tp": True,
+        "cal_monthly_tp_vname": "tp",
+        "cal_monthly_tp_tcoord": "time",
+        "cal_monthly_tp_fname": "montp",
+    }
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    # check if the time dimension is retained
+    assert len(preprocessed_dataset["tp"].time) == 2
+
+    # check if file name is updated
+    assert updated_fname == f"{fname_base}_montp"
 
 
 def test_preprocess_data_file_invalid(tmp_path):
