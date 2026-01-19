@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "heiplanet-data"
 license = "MIT"
-version = ["version"]
+dynamic = ["version"]
 readme = "README.md"
 description = "Data processing pipeline for heiplanet"
 requires-python = ">=3.11"
