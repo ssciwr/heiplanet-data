@@ -110,7 +110,7 @@ def convert_to_celsius(temperature_kelvin: T) -> T:
 
 def convert_to_celsius_with_attributes(
     dataset: xr.Dataset,
-    inplace: bool = False,
+    inplace: bool = True,
     var_name: str = "t2m",
 ) -> xr.Dataset:
     """Convert temperature from Kelvin to Celsius and keep attributes.
@@ -118,7 +118,7 @@ def convert_to_celsius_with_attributes(
     Args:
         dataset (xr.Dataset): Dataset containing temperature in Kelvin.
         inplace (bool): If True, modify the original dataset.
-            If False, return a new dataset. Default is False.
+            If False, return a new dataset. Default is True.
         var_name (str): Name of the temperature variable in the dataset.
             Default is "t2m".
 
@@ -196,14 +196,14 @@ def convert_m_to_mm(precipitation: T) -> T:
 
 
 def convert_m_to_mm_with_attributes(
-    dataset: xr.Dataset, inplace: bool = False, var_name: str = "tp"
+    dataset: xr.Dataset, inplace: bool = True, var_name: str = "tp"
 ) -> xr.Dataset:
     """Convert precipitation from meters to millimeters and keep attributes.
 
     Args:
         dataset (xr.Dataset): Dataset containing precipitation in meters.
         inplace (bool): If True, modify the original dataset.
-            If False, return a new dataset. Default is False.
+            If False, return a new dataset. Default is True.
         var_name (str): Name of the precipitation variable in the dataset.
             Default is "tp".
 

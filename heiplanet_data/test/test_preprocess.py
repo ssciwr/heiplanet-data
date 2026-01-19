@@ -1250,6 +1250,7 @@ def test_apply_preprocessing_adjust_longitude(get_dataset):
 
 
 def test_apply_preprocessing_convert_to_celsius(get_dataset):
+    org_ds = get_dataset.copy()
     fname_base = "test_data"
 
     settings = {
@@ -1263,7 +1264,7 @@ def test_apply_preprocessing_convert_to_celsius(get_dataset):
     )
 
     # check if the temperature is converted to Celsius
-    expected_t2m = get_dataset["t2m"] - 273.15
+    expected_t2m = org_ds["t2m"] - 273.15  # default inplace
     assert np.allclose(preprocessed_dataset["t2m"].values, expected_t2m.values)
 
     # check if file name is updated
@@ -1271,6 +1272,7 @@ def test_apply_preprocessing_convert_to_celsius(get_dataset):
 
 
 def test_apply_preprocessing_convert_m_to_mm(get_dataset):
+    org_ds = get_dataset.copy()
     fname_base = "test_data"
 
     settings = {
@@ -1284,7 +1286,7 @@ def test_apply_preprocessing_convert_m_to_mm(get_dataset):
     )
 
     # check if the precipitation is converted to mm
-    expected_tp = get_dataset["tp"] * 1000.0
+    expected_tp = org_ds["tp"] * 1000.0  # default inplace
     assert np.allclose(preprocessed_dataset["tp"].values, expected_tp.values)
 
     # check if file name is updated
