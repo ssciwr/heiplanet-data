@@ -7,13 +7,17 @@ from heiplanet_data import preprocess
 from dask.diagnostics.progress import ProgressBar
 
 
-def download_data(output_file: Path, dataset: str, request: Dict[str, Any]):
+def download_data(
+    output_file: Path, dataset: str, request: Dict[str, Any], overwrite: bool = False
+):
     """Download data from Copernicus's CDS using the cdsapi.
 
     Args:
         output_file (Path): The path to the output file where data will be saved.
         dataset (str): The name of the dataset to download.
         request (Dict[str, Any]): A dictionary containing the request parameters.
+        overwrite (bool): Whether to overwrite the output file if it already exists.
+            Default is False.
     """
     if not output_file:
         raise ValueError("Output file path must be provided.")
@@ -24,7 +28,12 @@ def download_data(output_file: Path, dataset: str, request: Dict[str, Any]):
     if not request or not isinstance(request, dict):
         raise ValueError("Request information must be a dictionary.")
 
-    if not output_file.exists():
+    if output_file.exists() and not overwrite:
+        raise FileExistsError(
+            f"Output file {output_file} already exists. Set overwrite=True to overwrite."
+        )
+
+    if not output_file.parent.exists():
         # create the directory if it doesn't exist
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -248,7 +257,7 @@ def _truncate_string(s: str, max_length: int = 100) -> str:
     return s if len(s) <= max_length else s[:max_length] + "_etc"
 
 
-def get_filename(
+def suggest_filename(
     ds_name: str,
     data_format: str,
     years: List[str] | None,
