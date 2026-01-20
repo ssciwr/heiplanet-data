@@ -268,7 +268,10 @@ def suggest_filename(
     base_name: str = "era5_data",
     variables: List[str] = ["2m_temperature"],
 ) -> str:
-    """Get file name based on dataset name, base name, years, months and area.
+    """Suggest a filename that contains key metadata about the dataset.
+    The format is:
+    {base_name}_{year_str}_{month_str}_{day_str}_{time_str}_
+        {var_str}_{ds_type}_{area_str}_raw.{ext}
 
     Args:
         ds_name (str): Dataset name.
