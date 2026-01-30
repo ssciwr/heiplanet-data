@@ -34,6 +34,7 @@ dependencies = [
   "xagg",
   "exactextract",
   "rioxarray",
+  "tinydb",
 ]
 
 [project.optional-dependencies]
