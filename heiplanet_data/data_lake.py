@@ -1,6 +1,8 @@
 from tinydb import TinyDB, Query
 import hashlib
 from typing import Any, Dict, List, Tuple, Literal
+from datetime import datetime
+from heiplanet_data import utils
 
 
 def load_db(db_fpath: str) -> Tuple[TinyDB, Query]:
@@ -56,6 +58,30 @@ def _compute_hash_value(signature_data: Dict[str, Any]) -> str:
     return hash_value
 
 
+def _create_single_signature(
+    source_dataset: str,
+    product_type: str,
+    data_var: str,
+) -> Dict[str, Any]:
+    """Create a signature dictionary for a single data variable
+    directly from source dataset, product type, and data variable name.
+
+    Args:
+        source_dataset (str): Name of the source dataset.
+        product_type (str): Product type.
+        data_var (str): Data variable.
+
+    Returns:
+        Dict[str, Any]: Signature dictionary.
+    """
+    signature_var = {
+        "ds_name": source_dataset,
+        "product_type": product_type,
+        "data_var": data_var,
+    }
+    return signature_var
+
+
 def _create_signatures(
     source_dataset: str,
     request: Dict[str, Any],
@@ -72,11 +98,11 @@ def _create_signatures(
     """
     signatures = []
     for data_var in request.get("variable", []):
-        signature_var = {
-            "ds_name": source_dataset,
-            "product_type": request.get("product_type", ""),
-            "data_var": data_var,
-        }
+        signature_var = _create_single_signature(
+            source_dataset,
+            request.get("product_type", ""),
+            data_var,
+        )
         signatures.append(signature_var)
     return signatures
 
@@ -107,6 +133,7 @@ def _construct_item(
         "signature": signature_var,
         "year": request.get("year", []),
         "month": request.get("month", []),
+        "day": request.get("day", []),
         "time": request.get("time", []),
         "file_path": downloaded_fpath,
         "data_format": request.get("data_format", ""),
@@ -181,26 +208,173 @@ def update_document_status(
     return updated_ids
 
 
-def find_existing_docs_by_request(
+def find_existing_docs_by_var_request(
     db: TinyDB,
     query: Query,
     source_dataset: str,
     request: Dict[str, Any],
+    data_var: str,
 ) -> List[Dict[str, Any]]:
     """Find existing documents in the TinyDB database,
-    based on the source dataset and request dictionary.
+    based on the source dataset, data variable, and request dictionary.
+
+    Search strategy:
+    - Retrieve all documents with the same signature,
+        i.e. source_dataset, product_type, and data variable
+    - Get documents with overlapping year, month, day, and time
 
     Args:
         db (TinyDB): TinyDB instance.
         query (Query): Query instance for querying the database.
         source_dataset (str): Name of the source dataset.
         request (Dict[str, Any]): Request dictionary used to download the data.
+        data_var (str): Data variable in the request.
+
+    Returns:
+        List[Dict[str, Any]]: List of documents that match the criteria.
     """
-    # TODO: redesign thisfunction
-    return
+    if data_var not in request.get("variable", []):
+        raise ValueError(f"Data variable {data_var} not found in request variables.")
+
+    # create signature
+    signature_var = _create_single_signature(
+        source_dataset,
+        request.get("product_type", ""),
+        data_var,
+    )
+
+    # find existing documents with same signatures
+    # and overlapping year, month, day, time
+    req_years = set(request.get("year", []))
+    req_months = set(request.get("month", []))
+    req_days = set(request.get("day", []))
+    req_times = set(request.get("time", []))
+    hash_value = _compute_hash_value(signature_var)
+
+    results = db.search(
+        (query.hash == hash_value)
+        & query.year.any(req_years)
+        & query.month.any(req_months)
+        & query.day.any(req_days)
+        & query.time.any(req_times)
+    )
+
+    return results
 
 
-def find_docs_var_continues_time(
+def find_existing_docs_by_request(
+    db: TinyDB,
+    query: Query,
+    source_dataset: str,
+    request: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    """Find existing documents in the TinyDB database,
+    based on the source dataset and request dictionary.
+
+    The resulting documents match the request's hash signatures
+    for each data variable and have **overlapping** year, month, day, and time.
+
+    Args:
+        db (TinyDB): TinyDB instance.
+        query (Query): Query instance for querying the database.
+        source_dataset (str): Name of the source dataset.
+        request (Dict[str, Any]): Request dictionary used to download the data.
+
+    Returns:
+        Dict[str, Dict[str, Any]]: Dictionary of documents that match the criteria,
+            keyed by data variable.
+    """
+    filtered_docs = {}
+    for data_var in request.get("variable", []):
+        docs_var = find_existing_docs_by_var_request(
+            db,
+            query,
+            source_dataset,
+            request,
+            data_var,
+        )
+        if docs_var:
+            filtered_docs[data_var] = docs_var
+
+    return filtered_docs
+
+
+def find_exsiting_docs_by_var_time(
+    db: TinyDB,
+    query: Query,
+    ds_name: str,
+    product_type: str,
+    data_var: str,
+    start_time: str,
+    end_time: str,
+) -> Dict[Tuple[datetime, datetime], Tuple[Dict[str, Any], bool]]:
+    """Find all documents that contain data for a specific data variable,
+    from a dataset with a specific product type,
+    and cover a continuous time range from start_time to end_time.
+
+    The range from start_time to end_time will be split into smaller ranges
+    that each covers full years. For each smaller range,
+    documents with same hashed signature and
+    **overlapping** year, month, day, and time will be retrieved.
+
+    Args:
+        db (TinyDB): TinyDB instance.
+        query (Query): Query instance for querying the database.
+        ds_name (str): Dataset name.
+        product_type (str): Product type.
+        data_var (str): Data variable name.
+        start_time (str): Start time in "%Y-%m-%d-%H:%M" format.
+        end_time (str): End time in "%Y-%m-%d-%H:%M" format.
+
+    Returns:
+        Dict[Tuple[datetime, datetime], Tuple[Dict[str, Any], bool]]:
+            Dictionary of documents that match the criteria, keyed by date ranges.
+            Each value is a tuple of the document and
+            a boolean indicating whether to truncate later.
+            The document corresponds to the date range key should be truncated
+            by if the years, months, days, and times extracted from the date range
+            exceed those stored from the original range.
+            More details in utils.extract_years_months_days_from_range() function.
+    """
+    # create signature
+    signature_var = _create_single_signature(
+        ds_name,
+        product_type,
+        data_var,
+    )
+    hash_value = _compute_hash_value(signature_var)
+
+    # get time ranges from the start and end time
+    try:
+        start_dt = datetime.strptime(start_time, "%Y-%m-%d-%H:%M")
+        end_dt = datetime.strptime(end_time, "%Y-%m-%d-%H:%M")
+    except ValueError:
+        raise ValueError("start_time and end_time must be in '%Y-%m-%d-%H:%M' format.")
+
+    ranges = utils.split_date_range_by_full_years(start_dt, end_dt)
+
+    # find exsiting documents with same signatures
+    # and overlapping year, month, day, time
+    results = {}
+    for date_range in ranges:
+        years, months, days, times, truncate_later = (
+            utils.extract_years_months_days_from_range(date_range[0], date_range[1])
+        )
+
+        docs = db.search(
+            (query.hash == hash_value)
+            & query.year.any(years)
+            & query.month.any(months)
+            & query.day.any(days)
+            & query.time.any(times)
+        )
+        if docs:
+            results[(date_range[0], date_range[1])] = (docs, truncate_later)
+
+    return results
+
+
+def extract_data_by_var_time(
     db: TinyDB,
     query: Query,
     ds_name: str,
@@ -209,9 +383,11 @@ def find_docs_var_continues_time(
     start_time: str,
     end_time: str,
 ) -> List[Dict[str, Any]]:
-    """Find all documents that contain data for a specific data variable,
+    """Extract all documents that contain data for a specific data variable,
     from a dataset with a specific product type,
-    and cover a continuous time range from start_time to end_time.
+    and cover a continuous time range between start_time and end_time.
+
+    ??
 
     Args:
         db (TinyDB): TinyDB instance.
@@ -225,5 +401,5 @@ def find_docs_var_continues_time(
     Returns:
         List[Dict[str, Any]]: List of documents that match the criteria.
     """
-    # TODO: move functions handling time range from inout to utils.py
-    pass
+    # TODO
+    return
