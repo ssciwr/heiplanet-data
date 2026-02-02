@@ -380,3 +380,134 @@ def test_generate_unique_tag():
     # Check if the hostname is a valid string
     assert "h" in hostname_part  # should start with "h"
     assert isinstance(hostname_part, str) and len(hostname_part) > 0
+
+
+def test_split_date_range_by_full_years():
+    # sample date
+    start_time = datetime.strptime("2016-01-02", "%Y-%m-%d")
+    end_time = datetime.strptime("2018-01-01", "%Y-%m-%d")
+    ranges = utils.split_date_range_by_full_years(start_time, end_time)
+    assert len(ranges) == 3
+    assert ranges[0] == (start_time, datetime.strptime("2016-12-31", "%Y-%m-%d"))
+    assert ranges[1] == (
+        datetime.strptime("2017-01-01", "%Y-%m-%d"),
+        datetime.strptime("2017-12-31", "%Y-%m-%d"),
+    )
+    assert ranges[2] == (datetime.strptime("2018-01-01", "%Y-%m-%d"), end_time)
+
+    # same year
+    start_time = datetime.strptime("2025-03-15", "%Y-%m-%d")
+    end_time = datetime.strptime("2025-10-20", "%Y-%m-%d")
+    ranges = utils.split_date_range_by_full_years(start_time, end_time)
+    assert len(ranges) == 1
+    assert ranges[0] == (start_time, end_time)
+
+    # same year, month
+    start_time = datetime.strptime("2025-03-15", "%Y-%m-%d")
+    end_time = datetime.strptime("2025-03-20", "%Y-%m-%d")
+    ranges = utils.split_date_range_by_full_years(start_time, end_time)
+    assert len(ranges) == 1
+    assert ranges[0] == (start_time, end_time)
+
+    # mid at both ends
+    start_time = datetime.strptime("2025-03-15", "%Y-%m-%d")
+    end_time = datetime.strptime("2027-10-20", "%Y-%m-%d")
+    ranges = utils.split_date_range_by_full_years(start_time, end_time)
+    assert len(ranges) == 3
+    assert ranges[0] == (start_time, datetime.strptime("2025-12-31", "%Y-%m-%d"))
+    assert ranges[1] == (
+        datetime.strptime("2026-01-01", "%Y-%m-%d"),
+        datetime.strptime("2026-12-31", "%Y-%m-%d"),
+    )
+    assert ranges[2] == (datetime.strptime("2027-01-01", "%Y-%m-%d"), end_time)
+
+    # mid at both ends, 1 year apart
+    start_time = datetime.strptime("2025-03-15", "%Y-%m-%d")
+    end_time = datetime.strptime("2026-10-20", "%Y-%m-%d")
+    ranges = utils.split_date_range_by_full_years(start_time, end_time)
+    assert len(ranges) == 2
+    assert ranges[0] == (start_time, datetime.strptime("2025-12-31", "%Y-%m-%d"))
+    assert ranges[1] == (datetime.strptime("2026-01-01", "%Y-%m-%d"), end_time)
+
+    # full years at both ends
+    start_time = datetime.strptime("2025-01-01", "%Y-%m-%d")
+    end_time = datetime.strptime("2026-12-31", "%Y-%m-%d")
+    ranges = utils.split_date_range_by_full_years(start_time, end_time)
+    assert len(ranges) == 1
+    assert ranges[0] == (start_time, end_time)
+
+    # full year at start, mid at end
+    start_time = datetime.strptime("2025-01-01", "%Y-%m-%d")
+    end_time = datetime.strptime("2026-10-20", "%Y-%m-%d")
+    ranges = utils.split_date_range_by_full_years(start_time, end_time)
+    assert len(ranges) == 2
+    assert ranges[0] == (start_time, datetime.strptime("2025-12-31", "%Y-%m-%d"))
+    assert ranges[1] == (datetime.strptime("2026-01-01", "%Y-%m-%d"), end_time)
+
+    # mid at start, full year at end
+    start_time = datetime.strptime("2025-03-15", "%Y-%m-%d")
+    end_time = datetime.strptime("2026-12-31", "%Y-%m-%d")
+    ranges = utils.split_date_range_by_full_years(start_time, end_time)
+    assert len(ranges) == 2
+    assert ranges[0] == (start_time, datetime.strptime("2025-12-31", "%Y-%m-%d"))
+    assert ranges[1] == (datetime.strptime("2026-01-01", "%Y-%m-%d"), end_time)
+
+
+def test_extract_years_months_days_from_range():
+    all_months = [str(i).zfill(2) for i in range(1, 13)]
+    all_days = [str(i).zfill(2) for i in range(1, 32)]
+
+    # diff years, full months and days
+    start_time = datetime.strptime("2024-01-01", "%Y-%m-%d")
+    end_time = datetime.strptime("2025-12-31", "%Y-%m-%d")
+    years, months, days, truncate = utils.extract_years_months_days_from_range(
+        start_time, end_time
+    )
+    assert years == ["2024", "2025"]
+    assert months == all_months
+    assert days == all_days
+    assert truncate is False
+
+    # diff years, partial months or days
+    start_time = datetime.strptime("2026-03-15", "%Y-%m-%d")
+    end_time = datetime.strptime("2027-10-20", "%Y-%m-%d")
+    years, months, days, truncate = utils.extract_years_months_days_from_range(
+        start_time, end_time
+    )
+    assert years == ["2026", "2027"]
+    assert months == all_months
+    assert days == all_days
+    assert truncate is True
+
+    # same years, full months and days
+    start_time = datetime.strptime("2025-01-01", "%Y-%m-%d")
+    end_time = datetime.strptime("2025-12-31", "%Y-%m-%d")
+    years, months, days, truncate = utils.extract_years_months_days_from_range(
+        start_time, end_time
+    )
+    assert years == ["2025"]
+    assert months == all_months
+    assert days == all_days
+    assert truncate is False
+
+    # same years, diff months
+    start_time = datetime.strptime("2025-03-10", "%Y-%m-%d")
+    end_time = datetime.strptime("2025-10-25", "%Y-%m-%d")
+    years, months, days, truncate = utils.extract_years_months_days_from_range(
+        start_time, end_time
+    )
+    assert years == ["2025"]
+    assert months == [str(i).zfill(2) for i in range(3, 11)]
+    assert days == all_days
+    assert truncate is True
+
+    # same years, same months, diff days
+    start_time = datetime.strptime("2025-05-10", "%Y-%m-%d")
+    end_time = datetime.strptime("2025-05-25", "%Y-%m-%d")
+    years, months, days, truncate = utils.extract_years_months_days_from_range(
+        start_time, end_time
+    )
+    assert years == ["2025"]
+    assert months == ["05"]
+    assert days == [str(i).zfill(2) for i in range(10, 26)]
+    assert truncate is False

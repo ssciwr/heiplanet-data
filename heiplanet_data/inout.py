@@ -3,7 +3,7 @@ from pathlib import Path
 import xarray as xr
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
-from heiplanet_data import preprocess
+from heiplanet_data import preprocess, utils
 from dask.diagnostics.progress import ProgressBar
 
 
@@ -298,116 +298,6 @@ def get_filename(
     return file_name
 
 
-def _split_date_range_by_full_years(
-    start_time: datetime, end_time: datetime
-) -> List[Tuple[datetime, datetime]]:
-    """Split a date range into sub-ranges
-    with one range covering as many full years as possible.
-    The rest of the range is split into two sub-ranges at the start and end, if needed.
-    E.g. 2020-10-15 to 2023-03-20
-        -> [(2020-10-15, 2020-12-31), (2021-01-01, 2022-12-31), (2023-01-01, 2023-03-20)]
-    E.g. 2020-01-01 to 2023-03-20
-        -> [(2020-01-01, 2022-12-31), (2023-01-01, 2023-03-20)]
-    E.g. 2020-10-15 to 2023-12-31
-        -> [(2020-10-15, 2022-12-31), (2023-01-01, 2023-12-31)]
-    E.g. 2020-01-01 to 2023-12-31
-        -> [(2020-01-01, 2023-12-31)]
-
-    Args:
-        start_time (datetime): Start datetime.
-        end_time (datetime): End datetime.
-
-    Returns:
-        List[Tuple[datetime, datetime]]: List of tuples representing the start and end
-            of each sub-range.
-    """
-    ranges = []
-    full_years_range = None
-
-    if end_time.year - start_time.year < 1:
-        return [(start_time, end_time)]
-
-    first_full_year_start = (
-        datetime(start_time.year + 1, 1, 1)
-        if start_time != datetime(start_time.year, 1, 1)
-        else start_time
-    )
-    last_full_year_end = (
-        datetime(end_time.year - 1, 12, 31)
-        if end_time != datetime(end_time.year, 12, 31)
-        else end_time
-    )
-
-    if first_full_year_start <= last_full_year_end:
-        full_years_range = (first_full_year_start, last_full_year_end)
-
-    # from start to before full years range
-    if start_time < first_full_year_start:
-        ranges.append((start_time, (first_full_year_start - timedelta(days=1))))
-
-    # full years range
-    if full_years_range:
-        ranges.append(full_years_range)
-
-    # from after full years range to end
-    if end_time > last_full_year_end:
-        ranges.append((last_full_year_end + timedelta(days=1), end_time))
-
-    return ranges
-
-
-def _extract_years_months_days_from_range(
-    start_time: datetime, end_time: datetime
-) -> Tuple[List[str], List[str], List[str], bool]:
-    """Extract years, months, and days from start and end datetime objects.
-    For simplicity:
-        * If the start and end times are in different years,
-            all months and days are included.
-        * If they are in the same year but different months,
-            all days are included.
-        * If they are in the same month,
-            only the days between start and end are included.
-
-    Note: This function becomes inefficient when the range covers just a few days
-        of different years. Use function _split_date_range_by_full_years()
-        to split the range into smaller ranges first.
-
-    Args:
-        start_time (datetime): Start datetime.
-        end_time (datetime): End datetime.
-
-    Returns:
-        Tuple[List[str], List[str], List[str], bool]: Lists of years, months, and days
-            as strings and flag to indicate if we need to truncate data later
-            to get the exact range.
-            Months and days are formatted as two-digit strings.
-    """
-    truncate_later = False
-
-    years = [str(year) for year in range(start_time.year, end_time.year + 1)]
-
-    not_start_year = start_time.month != 1 or start_time.day != 1
-    not_end_year = end_time.month != 12 or end_time.day != 31
-
-    if start_time.year != end_time.year:
-        months = [str(month).zfill(2) for month in range(1, 13)]
-        days = [str(day).zfill(2) for day in range(1, 32)]
-        if not_start_year or not_end_year:
-            truncate_later = True
-    elif start_time.month != end_time.month:
-        months = [
-            f"{month:02d}" for month in range(start_time.month, end_time.month + 1)
-        ]
-        days = [f"{day:02d}" for day in range(1, 32)]
-        if not_start_year or not_end_year:
-            truncate_later = True
-    else:
-        months = [f"{start_time.month:02d}"]
-        days = [f"{day:02d}" for day in range(start_time.day, end_time.day + 1)]
-
-    return years, months, days, truncate_later
-
-
 def _download_sub_tp_data(
     date_range: Tuple[datetime, datetime],
     range_idx: int,
@@ -441,7 +331,7 @@ def _download_sub_tp_data(
     end_time = date_range[1]
 
     # get data for CDS request
-    years, months, days, truncate_later = _extract_years_months_days_from_range(
+    years, months, days, truncate_later = utils.extract_years_months_days_from_range(
         start_time, end_time
     )
 
@@ -570,7 +460,7 @@ def download_total_precipitation_from_hourly_era5_land(
     end_time_shifted = end_time + timedelta(days=1)
 
     # split the range into smaller ranges
-    ranges = _split_date_range_by_full_years(start_time_shifted, end_time_shifted)
+    ranges = utils.split_date_range_by_full_years(start_time_shifted, end_time_shifted)
 
     # download data
     if output_file_path.exists():
