@@ -1,6 +1,6 @@
 from pathlib import Path
 from heiplanet_data.inout import (
-    download_data,
+    download_data_by_request,
     get_filename,
 )
 from heiplanet_data.preprocess import (
@@ -50,7 +50,7 @@ if __name__ == "__main__":
 
     if not output_file.exists():
         print("Downloading data...")
-        download_data(output_file, dataset, request)
+        download_data_by_request(output_file, dataset, request)
     else:
         print("Data already exists at {}".format(output_file))
 

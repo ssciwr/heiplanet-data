@@ -9,7 +9,7 @@ from tinydb import TinyDB, Query
 from heiplanet_data import data_lake
 
 
-def download_data(output_file: Path, dataset: str, request: Dict[str, Any]):
+def download_data_by_request(output_file: Path, dataset: str, request: Dict[str, Any]):
     """Download data from Copernicus's CDS using the cdsapi.
 
     Args:
@@ -362,7 +362,7 @@ def _download_sub_tp_data(
         return tmp_file_path
     else:
         print(f"Downloading data to temporary file {tmp_file_path} ...")
-        download_data(tmp_file_path, ds_name, request)
+        download_data_by_request(tmp_file_path, ds_name, request)
 
     if truncate_later:
         tmp_out = tmp_file_path.with_suffix(".truncated.nc")

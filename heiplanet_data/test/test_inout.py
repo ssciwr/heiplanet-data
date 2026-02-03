@@ -5,29 +5,31 @@ import numpy as np
 from datetime import datetime
 
 
-def test_download_data_invalid():
+def test_download_data_by_request_invalid():
     # empty output file path
     with pytest.raises(ValueError):
-        inout.download_data(None, "test_dataset", {"param": "value"})
+        inout.download_data_by_request(None, "test_dataset", {"param": "value"})
 
     # empty dataset name
     with pytest.raises(ValueError):
-        inout.download_data("test_output.nc", "", {"param": "value"})
+        inout.download_data_by_request("test_output.nc", "", {"param": "value"})
 
     # invalid dataset name
     with pytest.raises(ValueError):
-        inout.download_data("test_output.nc", 123, {"param": "value"})
+        inout.download_data_by_request("test_output.nc", 123, {"param": "value"})
 
     # empty request information
     with pytest.raises(ValueError):
-        inout.download_data("test_output.nc", "test_dataset", None)
+        inout.download_data_by_request("test_output.nc", "test_dataset", None)
 
     # invalid request information
     with pytest.raises(ValueError):
-        inout.download_data("test_output.nc", "test_dataset", "invalid_request")
+        inout.download_data_by_request(
+            "test_output.nc", "test_dataset", "invalid_request"
+        )
 
 
-def test_download_data_valid(tmp_path):
+def test_download_data_by_request_valid(tmp_path):
     output_file = tmp_path / "test" / "test_output.nc"
     dataset = "reanalysis-era5-land-monthly-means"
     request = {
@@ -40,7 +42,7 @@ def test_download_data_valid(tmp_path):
         "download_format": "unarchived",
         "area": [0, -1, 0, 1],  # [N, W, S, E]
     }
-    inout.download_data(output_file, dataset, request)
+    inout.download_data_by_request(output_file, dataset, request)
     assert output_file.exists()
     assert output_file.parent.exists()
     # Clean up
@@ -635,7 +637,7 @@ def test_download_total_precipitation_from_hourly_era5_land_same_year_month(
         "download_format": "unarchived",
     }
     tmp_file = out_dir / "temp_download.nc"
-    inout.download_data(tmp_file, dataset, request)
+    inout.download_data_by_request(tmp_file, dataset, request)
 
     # compare data
     with xr.open_dataset(tmp_file) as tmp_ds:
