@@ -5,6 +5,8 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from heiplanet_data import preprocess, utils
 from dask.diagnostics.progress import ProgressBar
+from tinydb import TinyDB, Query
+from heiplanet_data import data_lake
 
 
 def download_data(output_file: Path, dataset: str, request: Dict[str, Any]):
@@ -534,3 +536,66 @@ def download_total_precipitation_from_hourly_era5_land(
     )
 
     return str(output_file_path)
+
+
+def extract_data_by_var_time(
+    db: TinyDB,
+    query: Query,
+    ds_name: str,
+    product_type: str,
+    data_var: str,
+    start_time: str,
+    end_time: str,
+    output_file_outside_data_lake: Path | None = None,
+) -> Tuple[xr.Dataset, Path]:
+    """Extract data of a specific data variable, of a specific product type,
+    from a dataset, and within a specific time range.
+
+    Search strategy:
+    - Find existing documents that have same hashed signature
+        (ds_name, product_type, data_var) and cover the time range
+    - Check if all time points in the range are covered by the existing documents
+    - If some time points are missing,
+        download the missing data and add new documents to the data lake
+    - If one file in the data lake matches the query exactly,
+        return the data from this file and its file path
+    - If multiple files in the data lake cover the time range,
+        merge the data from these files,
+        output_file_outside_data_lake is used to save the merged dataset if provided,
+        return the merged dataset and its file path.
+
+        This is because we should not save back the merged dataset into the data lake
+        as it may cause duplication of data.
+        However, saving the merged dataset might save time for future queries.
+        Therefore, this merged dataset is treated as a special view of the whole data lake,
+        and shoule be saved outside the data lake.
+
+
+    Args:
+        db (TinyDB): TinyDB instance.
+        query (Query): Query instance for querying the database.
+        ds_name (str): Dataset name.
+        product_type (str): Product type.
+        data_var (str): Data variable name.
+        start_time (str): Start time in "%Y-%m-%d-%H:%M" format.
+        end_time (str): End time in "%Y-%m-%d-%H:%M" format.
+        output_file_outside_data_lake (Path | None): Optional path to save
+            the resulting dataset outside the data lake.
+
+    Returns:
+        Tuple[xr.Dataset, Path]: A tuple containing the extracted dataset
+            and the path to the file where the dataset is saved.
+    """
+    # find exsisting documents that match the query
+    candidate_docs, missing_ranges = data_lake.find_exsiting_docs_by_var_time(
+        db,
+        query,
+        ds_name,
+        product_type,
+        data_var,
+        start_time,
+        end_time,
+    )
+
+    # download missing data
+    # TODO: modify _download_sub_tp_data for this purpose.

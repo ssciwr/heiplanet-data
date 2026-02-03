@@ -307,7 +307,9 @@ def find_exsiting_docs_by_var_time(
     data_var: str,
     start_time: str,
     end_time: str,
-) -> Dict[Tuple[datetime, datetime], Tuple[Dict[str, Any], bool]]:
+) -> Tuple[
+    Dict[Tuple[datetime, datetime], Dict[str, Any]], List[Tuple[datetime, datetime]]
+]:
     """Find all documents that contain data for a specific data variable,
     from a dataset with a specific product type,
     and cover a continuous time range from start_time to end_time.
@@ -327,14 +329,15 @@ def find_exsiting_docs_by_var_time(
         end_time (str): End time in "%Y-%m-%d-%H:%M" format.
 
     Returns:
-        Dict[Tuple[datetime, datetime], Tuple[Dict[str, Any], bool]]:
-            Dictionary of documents that match the criteria, keyed by date ranges.
-            Each value is a tuple of the document and
-            a boolean indicating whether to truncate later.
-            The document corresponds to the date range key should be truncated
-            by if the years, months, days, and times extracted from the date range
-            exceed those stored from the original range.
-            More details in utils.extract_years_months_days_from_range() function.
+        Tuple[Dict[Tuple[datetime, datetime], Dict[str, Any]],
+              List[Tuple[datetime, datetime]]]:
+            A tuple containing:
+            - A dictionary where keys are tuples of (start_datetime, end_datetime)
+              representing the time ranges with existing documents,
+              and values are the corresponding documents.
+            - A list of tuples of (start_datetime, end_datetime)
+              representing the time ranges that are not covered
+              by any existing documents in the data lake.
     """
     # create signature
     signature_var = _create_single_signature(
@@ -356,10 +359,11 @@ def find_exsiting_docs_by_var_time(
     # find exsiting documents with same signatures
     # and overlapping year, month, day, time
     results = {}
+    missing_ranges = []
     for date_range in ranges:
-        years, months, days, times, truncate_later = (
-            utils.extract_years_months_days_from_range(date_range[0], date_range[1])
-        )
+        years, months, days, times, _ = utils.extract_years_months_days_from_range(
+            date_range[0], date_range[1]
+        )  # TODO: update extract_years_months_days_from_range to return times as well
 
         docs = db.search(
             (query.hash == hash_value)
@@ -369,37 +373,8 @@ def find_exsiting_docs_by_var_time(
             & query.time.any(times)
         )
         if docs:
-            results[(date_range[0], date_range[1])] = (docs, truncate_later)
+            results[(date_range[0], date_range[1])] = docs
+        else:
+            missing_ranges.append((date_range[0], date_range[1]))
 
-    return results
-
-
-def extract_data_by_var_time(
-    db: TinyDB,
-    query: Query,
-    ds_name: str,
-    product_type: str,
-    data_var: str,
-    start_time: str,
-    end_time: str,
-) -> List[Dict[str, Any]]:
-    """Extract all documents that contain data for a specific data variable,
-    from a dataset with a specific product type,
-    and cover a continuous time range between start_time and end_time.
-
-    ??
-
-    Args:
-        db (TinyDB): TinyDB instance.
-        query (Query): Query instance for querying the database.
-        ds_name (str): Dataset name.
-        product_type (str): Product type.
-        data_var (str): Data variable name.
-        start_time (str): Start time in "%Y-%m-%d-%H:%M" format.
-        end_time (str): End time in "%Y-%m-%d-%H:%M" format.
-
-    Returns:
-        List[Dict[str, Any]]: List of documents that match the criteria.
-    """
-    # TODO
-    return
+    return results, missing_ranges
