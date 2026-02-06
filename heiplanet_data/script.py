@@ -1,12 +1,10 @@
+import time
 from pathlib import Path
 from heiplanet_data.inout import (
     download_data,
     get_filename,
 )
-from heiplanet_data.preprocess import (
-    preprocess_data_file,
-)
-from heiplanet_data import utils
+from heiplanet_data import preprocess
 
 if __name__ == "__main__":
     # get the era5 land data for 2016 and 2017
@@ -45,23 +43,15 @@ if __name__ == "__main__":
     else:
         print("Data already exists at {}".format(output_file))
 
-    settings = utils.load_settings(
-        source="era5",
-        setting_path="default",
-        new_settings=None,
-    )
-
-    print("Preprocessing ERA5-Land data...")
-    preprocessed_dataset = preprocess_data_file(
+    print(f"Preprocessing ERA5-Land data: {output_file}")
+    t0 = time.time()
+    preprocessed_dataset, era5_pfname = preprocess.preprocess_data_file(
         netcdf_file=output_file,
-        settings=settings,
+        source="era5",
+        settings="default",
+        new_settings={"output_dir": str(data_folder_out)},
+        unique_tag="silver",
     )
-    # here we need to provide output folder
-    # preprocess the population data
-    # popu_file = data_folder / "population_histsoc_30arcmin_annual_1901_2021_renamed.nc"
-#
-# print("Preprocessing population data...")
-# preprocessed_popu = preprocess_data_file(
-#     netcdf_file=popu_file,
-#     settings=settings,
-# )
+    t_preprocess = time.time()
+    print(f"Preprocessing completed in {t_preprocess - t0:.2f} seconds.")
+    print(f"Name of preprocessed file: {era5_pfname}")
