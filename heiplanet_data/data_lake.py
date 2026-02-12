@@ -16,6 +16,18 @@ def load_db(db_fpath: str) -> Tuple[TinyDB, Query]:
     return TinyDB(db_fpath), Query()
 
 
+def get_db_fpath(db: TinyDB) -> str:
+    """Get the file path of the TinyDB database.
+
+    Args:
+        db (TinyDB): TinyDB instance.
+
+    Returns:
+        str: File path of the JSON of TinyDB database.
+    """
+    return db.storage._handle.name
+
+
 def _convert_to_canonicalized_str(obj: Any) -> str:
     """Convert an object to a canonicalized string for hashing.
         - dict -> string of values of sorted keys
@@ -174,6 +186,7 @@ def add_new_document(
             request,
             downloaded_fpath,
             downloaded_at,
+            status="active",
         )
         items.append(item)
 
@@ -339,6 +352,7 @@ def find_exsiting_docs_by_var_time(
               representing the time ranges that are not covered
               by any existing documents in the data lake.
     """
+    # TODO: how about data_format, download_format, and area?
     # create signature
     signature_var = _create_single_signature(
         ds_name,

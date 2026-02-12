@@ -7,15 +7,20 @@ from heiplanet_data import preprocess, utils
 from dask.diagnostics.progress import ProgressBar
 from tinydb import TinyDB, Query
 from heiplanet_data import data_lake
+import warnings
 
 
-def download_data_by_request(output_file: Path, dataset: str, request: Dict[str, Any]):
+def download_data_by_request(
+    output_file: Path, dataset: str, request: Dict[str, Any], db: TinyDB | None = None
+) -> None:
     """Download data from Copernicus's CDS using the cdsapi.
+    Update the database for download tracking data if db is provided.
 
     Args:
         output_file (Path): The path to the output file where data will be saved.
         dataset (str): The name of the dataset to download.
         request (Dict[str, Any]): A dictionary containing the request parameters.
+        db (TinyDB | None): Optional TinyDB instance for tracking downloads.
     """
     if not output_file:
         raise ValueError("Output file path must be provided.")
@@ -26,13 +31,109 @@ def download_data_by_request(output_file: Path, dataset: str, request: Dict[str,
     if not request or not isinstance(request, dict):
         raise ValueError("Request information must be a dictionary.")
 
-    if not output_file.exists():
+    if not output_file.parent.exists():
         # create the directory if it doesn't exist
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
     client = cdsapi.Client()
     client.retrieve(dataset, request, target=str(output_file))
+
+    # update db for download tracking
+    if db is not None:
+        data_lake.add_new_document(
+            db,
+            source_dataset=dataset,
+            request=request,
+            downloaded_fpath=str(output_file),
+            downloaded_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+
     print("Data downloaded successfully to {}".format(output_file))
+
+
+def download_data_by_var_time(
+    output_file: Path,
+    ds_name: str,
+    product_type: str | None,
+    data_var: str,
+    start_time: datetime,
+    end_time: datetime,
+    data_format: str = "netcdf",
+    download_format: str = "unarchived",
+    area: List[float] | None = None,
+    db: TinyDB | None = None,
+) -> None:
+    """Download data of a specific data variable, of a specific product type,
+    from a data source, and within a specific time range.
+    Update the database for download tracking data if db is provided.
+
+    Args:
+        output_file (Path): The path to the output file where data will be saved.
+        ds_name (str): Dataset name.
+        product_type (str | None): Product type.
+        data_var (str): Data variable name.
+        start_time (datetime): Start time as a datetime object.
+        end_time (datetime): End time as a datetime object.
+        data_format (str): Data format (e.g. "netcdf", "grib"). Default is "netcdf".
+        download_format (str): Download format (e.g. "unarchived", "zip").
+            Default is "unarchived".
+        db (TinyDB | None): Optional TinyDB instance for tracking downloads.
+        area (List[float] | None): Geographic area of interest [north, west, south, east].
+            Default is None.
+    """
+    # TODO: check if we can merge this func with _download_sub_tp_data
+    # input checking
+    if not output_file:
+        raise ValueError("Output file path must be provided.")
+    if not ds_name or not isinstance(ds_name, str):
+        raise ValueError("Dataset name must be a non-empty string.")
+    if product_type is not None and not isinstance(product_type, str):
+        raise ValueError("Product type must be a string or None.")
+    if not data_var or not isinstance(data_var, str):
+        raise ValueError("Data variable name must be a non-empty string.")
+
+    if start_time >= end_time:
+        raise ValueError("Start time must be before or equal to end time.")
+
+    if not output_file.parent.exists():
+        # create the directory if it doesn't exist
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # get data for CDS request
+    years, months, days, time, truncate_later = (
+        utils.extract_years_months_days_from_range(start_time, end_time)
+    )
+
+    # build CDS request
+    request = {
+        "variable": [data_var],
+        "year": years,
+        "month": months,
+        "day": days,
+        "data_format": data_format,
+        "download_format": download_format,
+    }
+
+    if time:
+        request["time"] = time
+
+    if product_type:
+        request["product_type"] = product_type
+
+    if area:
+        request["area"] = area
+
+    # download data
+    if output_file.exists():
+        warnings.warn(
+            f"File {output_file} already exists. Skipping download.", UserWarning
+        )
+    else:
+        print(f"Downloading data to {output_file} ...")
+        download_data_by_request(output_file, ds_name, request, db)
+
+    # TODO: return info similar to item for db download tracking
+    # so we can update the candidate_docs in extract_data_by_var_time func
 
 
 def save_to_netcdf(data: xr.DataArray, filename: str, encoding: Optional[Dict] = None):
@@ -547,9 +648,12 @@ def extract_data_by_var_time(
     start_time: str,
     end_time: str,
     output_file_outside_data_lake: Path | None = None,
+    data_format: str = "netcdf",
+    download_format: str = "unarchived",
+    area: List[float] | None = None,
 ) -> Tuple[xr.Dataset, Path]:
     """Extract data of a specific data variable, of a specific product type,
-    from a dataset, and within a specific time range.
+    from a data source, and within a specific time range.
 
     Search strategy:
     - Find existing documents that have same hashed signature
@@ -577,8 +681,8 @@ def extract_data_by_var_time(
         ds_name (str): Dataset name.
         product_type (str): Product type.
         data_var (str): Data variable name.
-        start_time (str): Start time in "%Y-%m-%d-%H:%M" format.
-        end_time (str): End time in "%Y-%m-%d-%H:%M" format.
+        start_time (str): Start time in "%Y-%m-%d-%H:%M:%S" format.
+        end_time (str): End time in "%Y-%m-%d-%H:%M:%S" format.
         output_file_outside_data_lake (Path | None): Optional path to save
             the resulting dataset outside the data lake.
 
@@ -598,4 +702,27 @@ def extract_data_by_var_time(
     )
 
     # download missing data
-    # TODO: modify _download_sub_tp_data for this purpose.
+    parent_dir = Path(data_lake.get_db_fpath(db)).parent
+    for missing_range in missing_ranges:
+        start_time = missing_range[0]
+        end_time = missing_range[1]
+
+        output_fname = (
+            f"missing_{ds_name}_{product_type}_{data_var}_{start_time}_{end_time}.nc"
+        )
+        output_fpath = parent_dir / output_fname
+
+        download_data_by_var_time(
+            output_file=output_fpath,
+            ds_name=ds_name,
+            product_type=product_type,
+            data_var=data_var,
+            start_time=start_time,
+            end_time=end_time,
+            data_format=data_format,
+            download_format=download_format,
+            area=area,
+            db=db,
+        )
+
+        # TODO: update candidate_docs accordingly
