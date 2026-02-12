@@ -2249,3 +2249,51 @@ def test_aggregate_data_by_nuts_overlapping_netcdfs(
         assert np.allclose(t2m_time0, t2m_time1)
         assert np.allclose(t2m_time2[0], get_dataset["t2m"].values[1, :, 0].mean())
         assert np.allclose(t2m_time2[1], get_dataset["t2m"].values[1, :, 1:].mean())
+
+
+def test_apply_preprocessing_wind_height_unchanged():
+    # create a dataset with an additional "height" dimension (ERA5 wind-like)
+    time_points = np.array(["2024-01-01", "2025-01-01"], dtype="datetime64[ns]")
+    height = [10.0, 100.0]
+    latitude = [0.0, 0.5]
+    longitude = [0.0, 0.5, 1.0]
+
+    rng = np.random.default_rng(seed=42)
+    data = rng.random((2, 2, 2, 3))
+    data_array_u = xr.DataArray(
+        data,
+        dims=["time", "height", "latitude", "longitude"],
+        coords={
+            "time": time_points,
+            "height": height,
+            "latitude": latitude,
+            "longitude": longitude,
+        },
+    )
+    dataset = xr.Dataset({"u10": data_array_u})
+
+    # record original height and data
+    org_height = dataset["height"].values.copy()
+    org_data = dataset["u10"].values.copy()
+
+    # no preprocessing step should touch the "height" coordinate
+    settings = {
+        "unify_coords": False,
+        "adjust_longitude": False,
+        "convert_kelvin_to_celsius": False,
+        "convert_m_to_mm_precipitation": False,
+        "resample_grid": False,
+        "truncate_date": False,
+        "cal_monthly_tp": False,
+    }
+    preprocessed_dataset, _ = preprocess._apply_preprocessing(
+        dataset, "test_wind", settings=settings
+    )
+
+    # check if height is unchanged
+    assert "height" in preprocessed_dataset.coords
+    assert np.array_equal(preprocessed_dataset["height"].values, org_height)
+
+    # check if data is unchanged
+    assert "height" in preprocessed_dataset["u10"].dims
+    assert np.array_equal(preprocessed_dataset["u10"].values, org_data)

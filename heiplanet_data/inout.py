@@ -256,7 +256,7 @@ def get_filename(
     days: List[str] | None = None,
     times: List[str] | None = None,
     has_area: bool = False,
-    base_name: str = "era5_data",
+    base_name: str = "era5_land_data",
     variables: List[str] = ["2m_temperature"],
 ) -> str:
     """Get file name based on dataset name, base name, years, months and area.
@@ -270,7 +270,7 @@ def get_filename(
         times (List[str] | None): List of times.
         has_area (bool): Flag indicating if area is included.
         base_name (str): Base name for the file.
-            Default is "era5_data".
+            Default is "era5_land_data".
         variables (List[str]): List of variables.
             Default is ["2m_temperature"].
 
@@ -509,7 +509,7 @@ def download_total_precipitation_from_hourly_era5_land(
     end_date: str,
     area: List[float] | None = None,
     out_dir: Path = Path("."),
-    base_name: str = "era5_data",
+    base_name: str = "era5_land_data",
     data_format: str = "netcdf",
     ds_name: str = "reanalysis-era5-land",
     coord_name: str = "valid_time",
@@ -530,7 +530,7 @@ def download_total_precipitation_from_hourly_era5_land(
         out_dir (Path): Output directory to save the downloaded file.
             Default is current directory.
         base_name (str): Base name for the file.
-            Default is "era5_data".
+            Default is "era5_land_data".
         data_format (str): Data format (e.g., "netcdf", "grib").
             Default is "netcdf".
         ds_name (str): Dataset name.
