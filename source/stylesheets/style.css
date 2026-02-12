@@ -1,0 +1,25 @@
+/* dark theme */
+[data-md-color-scheme="slate"] {
+    p > code, li > code {
+        color: #ffb3b3 !important;
+    }
+
+    .md-code__content, span.linenos::before {
+        background-color: #333 !important;
+    }
+}
+
+/* light theme (default) */
+p > code, li > code {
+    color: #7a1919 !important;
+}
+
+/* avoid breaking parameters name, etc. in table cells. */
+td code {
+    word-break: normal !important;
+}
+
+/* change background of code block*/
+.md-code__content, span.linenos::before {
+    background-color: #e6e6e6 !important;
+}
