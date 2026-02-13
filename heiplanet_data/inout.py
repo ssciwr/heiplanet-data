@@ -12,7 +12,7 @@ import warnings
 
 def download_data_by_request(
     output_file: Path, dataset: str, request: Dict[str, Any], db: TinyDB | None = None
-) -> None:
+) -> Tuple[List[int], List[Dict[str, Any]]]:
     """Download data from Copernicus's CDS using the cdsapi.
     Update the database for download tracking data if db is provided.
 
@@ -21,6 +21,11 @@ def download_data_by_request(
         dataset (str): The name of the dataset to download.
         request (Dict[str, Any]): A dictionary containing the request parameters.
         db (TinyDB | None): Optional TinyDB instance for tracking downloads.
+
+    Returns:
+        Tuple[List[int], List[Dict[str, Any]]]: A tuple containing:
+            - A list of IDs of the inserted documents in the TinyDB database.
+            - A list of the inserted document dictionaries.
     """
     if not output_file:
         raise ValueError("Output file path must be provided.")
@@ -40,15 +45,18 @@ def download_data_by_request(
 
     # update db for download tracking
     if db is not None:
-        data_lake.add_new_document(
+        inserted_ids, inserted_items = data_lake.add_new_document(
             db,
             source_dataset=dataset,
             request=request,
             downloaded_fpath=str(output_file),
             downloaded_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
+        return inserted_ids, inserted_items
 
     print("Data downloaded successfully to {}".format(output_file))
+
+    return None, None  # return None if db is not provided
 
 
 def download_data_by_var_time(
@@ -62,7 +70,7 @@ def download_data_by_var_time(
     download_format: str = "unarchived",
     area: List[float] | None = None,
     db: TinyDB | None = None,
-) -> None:
+) -> List[Dict[str, Any]] | None:
     """Download data of a specific data variable, of a specific product type,
     from a data source, and within a specific time range.
     Update the database for download tracking data if db is provided.
@@ -80,6 +88,10 @@ def download_data_by_var_time(
         db (TinyDB | None): Optional TinyDB instance for tracking downloads.
         area (List[float] | None): Geographic area of interest [north, west, south, east].
             Default is None.
+
+    Returns:
+        List[Dict[str, Any]] | None: A list of the inserted document dictionaries
+            if db is provided, otherwise None.
     """
     # TODO: check if we can merge this func with _download_sub_tp_data
     # input checking
@@ -130,10 +142,9 @@ def download_data_by_var_time(
         )
     else:
         print(f"Downloading data to {output_file} ...")
-        download_data_by_request(output_file, ds_name, request, db)
+        _, inserted_items = download_data_by_request(output_file, ds_name, request, db)
 
-    # TODO: return info similar to item for db download tracking
-    # so we can update the candidate_docs in extract_data_by_var_time func
+    return inserted_items
 
 
 def save_to_netcdf(data: xr.DataArray, filename: str, encoding: Optional[Dict] = None):
@@ -651,6 +662,7 @@ def extract_data_by_var_time(
     data_format: str = "netcdf",
     download_format: str = "unarchived",
     area: List[float] | None = None,
+    time_coord_name: str = "valid_time",
 ) -> Tuple[xr.Dataset, Path]:
     """Extract data of a specific data variable, of a specific product type,
     from a data source, and within a specific time range.
@@ -685,6 +697,13 @@ def extract_data_by_var_time(
         end_time (str): End time in "%Y-%m-%d-%H:%M:%S" format.
         output_file_outside_data_lake (Path | None): Optional path to save
             the resulting dataset outside the data lake.
+        data_format (str): Data format (e.g. "netcdf", "grib"). Default is "netcdf".
+        download_format (str): Download format (e.g. "unarchived", "zip").
+            Default is "unarchived".
+        area (List[float] | None): Geographic area of interest [north, west, south, east].
+            Default is None (global).
+        time_coord_name (str): Name of the time coordinate in the dataset.
+            Default is "valid_time". Only modify this if CDS changes the name of the coordinate.
 
     Returns:
         Tuple[xr.Dataset, Path]: A tuple containing the extracted dataset
@@ -712,7 +731,7 @@ def extract_data_by_var_time(
         )
         output_fpath = parent_dir / output_fname
 
-        download_data_by_var_time(
+        inserted_items = download_data_by_var_time(
             output_file=output_fpath,
             ds_name=ds_name,
             product_type=product_type,
@@ -725,4 +744,54 @@ def extract_data_by_var_time(
             db=db,
         )
 
-        # TODO: update candidate_docs accordingly
+        if inserted_items is not None:
+            # update the candidate_docs with the newly inserted documents
+            candidate_docs[(start_time, end_time)] = inserted_items
+
+    # check if we have an exact match
+    if len(candidate_docs) == 1:
+        doc = list(candidate_docs.values())[0][0]  # get the single document
+        print(f"Exact match found in data lake: {doc['downloaded_fpath']}")
+        ds = xr.open_dataset(doc["file_path"])
+        return ds, Path(doc["file_path"])
+
+    # check if we have multiple documents that cover the time range
+    elif len(candidate_docs) > 1:
+        print(
+            "Multiple documents found in data lake that cover the time range. Merging data ..."
+        )
+        ds_list = []
+        for docs in candidate_docs.values():
+            for doc in docs:
+                ds = xr.open_dataset(doc["file_path"])
+                ds_list.append(ds)
+
+        combined_ds = xr.combine_by_coords(ds_list)
+        combined_ds = combined_ds.sortby(time_coord_name)
+
+        if output_file_outside_data_lake is not None:
+            print(f"Saving the merged dataset to {output_file_outside_data_lake} ...")
+            encoding = {
+                var: {
+                    "zlib": True,
+                    "complevel": 4,
+                }
+                for var in combined_ds.data_vars
+            }
+            delayed = combined_ds.to_netcdf(
+                output_file_outside_data_lake,
+                mode="w",
+                format="NETCDF4",
+                encoding=encoding,
+                compute=False,
+            )
+            with ProgressBar():  # parallel writing with dask
+                delayed.compute()
+            return combined_ds, output_file_outside_data_lake
+        else:
+            return combined_ds, None  # return None if no output file is provided
+
+    else:
+        raise ValueError(
+            "No data found and downloaded for the given query and time range."
+        )

@@ -162,7 +162,7 @@ def add_new_document(
     request: Dict[str, Any],
     downloaded_fpath: str,
     downloaded_at: str,
-) -> List[int]:
+) -> Tuple[List[int], List[Dict[str, Any]]]:
     """Add a new document to the TinyDB database.
 
     Args:
@@ -173,7 +173,9 @@ def add_new_document(
         downloaded_at (str): Timestamp when the data was downloaded.
 
     Returns:
-        List[int]: IDs of the newly added documents in the TinyDB database.
+        Tuple[List[int], List[Dict[str, Any]]]: A tuple containing:
+            - A list of IDs of the inserted documents in the TinyDB database.
+            - A list of the inserted document dictionaries.
     """
     # compute signatures
     signatures = _create_signatures(source_dataset, request)
@@ -193,7 +195,7 @@ def add_new_document(
     # insert items into TinyDB
     doc_ids = db.insert_multiple(items)
 
-    return doc_ids
+    return doc_ids, items
 
 
 def update_document_status(
@@ -321,7 +323,8 @@ def find_exsiting_docs_by_var_time(
     start_time: str,
     end_time: str,
 ) -> Tuple[
-    Dict[Tuple[datetime, datetime], Dict[str, Any]], List[Tuple[datetime, datetime]]
+    Dict[Tuple[datetime, datetime], List[Dict[str, Any]]],
+    List[Tuple[datetime, datetime]],
 ]:
     """Find all documents that contain data for a specific data variable,
     from a dataset with a specific product type,
