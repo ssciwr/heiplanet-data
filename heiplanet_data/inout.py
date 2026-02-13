@@ -45,7 +45,7 @@ def download_data_by_request(
 
     # update db for download tracking
     if db is not None:
-        inserted_ids, inserted_items = data_lake.add_new_document(
+        inserted_ids, inserted_items = data_lake.add_new_documents(
             db,
             source_dataset=dataset,
             request=request,

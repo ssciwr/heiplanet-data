@@ -5,17 +5,6 @@ from datetime import datetime
 from heiplanet_data import utils
 
 
-def load_db(db_fpath: str) -> Tuple[TinyDB, Query]:
-    """Load data file into TinyDB instance.
-
-    Args:
-        db_fpath (str): Path to the JSON data file.
-    Returns:
-        Tuple[TinyDB, Query]: TinyDB instance and Query class.
-    """
-    return TinyDB(db_fpath), Query()
-
-
 def get_db_fpath(db: TinyDB) -> str:
     """Get the file path of the TinyDB database.
 
@@ -30,8 +19,9 @@ def get_db_fpath(db: TinyDB) -> str:
 
 def _convert_to_canonicalized_str(obj: Any) -> str:
     """Convert an object to a canonicalized string for hashing.
-        - dict -> string of values of sorted keys
-        - list -> list of sorted canonicalized items
+        - dict -> string of values of sorted keys, separated by "|"
+            key value are separated by "-"
+        - list -> string of sorted canonicalized items, separated by "|"
         - basic types -> string
     Args:
         obj (Any): Input object (dict, list, or basic type).
@@ -42,11 +32,13 @@ def _convert_to_canonicalized_str(obj: Any) -> str:
     if isinstance(obj, dict):
         items = []
         for key in sorted(obj.keys()):
-            items.append(_convert_to_canonicalized_str(obj[key]))
+            items.append(
+                f"{_convert_to_canonicalized_str(key)}-{_convert_to_canonicalized_str(obj[key])}"
+            )
         return "|".join(items)
     elif isinstance(obj, list):
-        items = [_convert_to_canonicalized_str(x) for x in sorted(obj)]
-        return "|".join(items)
+        items = [_convert_to_canonicalized_str(x) for x in obj]
+        return "|".join(sorted(items))
     else:
         return str(obj)
 
@@ -64,8 +56,8 @@ def _compute_hash_value(signature_data: Dict[str, Any]) -> str:
         str: Computed hash value as a string.
     """
 
-    singature_str = _convert_to_canonicalized_str(signature_data)
-    hash_value = hashlib.sha256(singature_str.encode("utf-8")).hexdigest
+    signature_str = _convert_to_canonicalized_str(signature_data)
+    hash_value = hashlib.sha256(signature_str.encode("utf-8")).hexdigest()
 
     return hash_value
 
@@ -156,17 +148,20 @@ def _construct_item(
     return item
 
 
-def add_new_document(
-    db: TinyDB,
+def add_new_documents(
+    db_fpath: str,
     source_dataset: str,
     request: Dict[str, Any],
     downloaded_fpath: str,
     downloaded_at: str,
 ) -> Tuple[List[int], List[Dict[str, Any]]]:
     """Add a new document to the TinyDB database.
+    This function should not be used directly, but rather
+    be called by the data downloading function in inout.py
+    after the data is downloaded.
 
     Args:
-        db (TinyDB): TinyDB instance.
+        db_fpath (str): File path of the TinyDB database.
         source_dataset (str): Name of the source dataset.
         request (Dict[str, Any]): Request dictionary used to download the data.
         downloaded_fpath (str): File path where the data is saved.
@@ -193,14 +188,14 @@ def add_new_document(
         items.append(item)
 
     # insert items into TinyDB
-    doc_ids = db.insert_multiple(items)
+    with TinyDB(db_fpath) as db:
+        doc_ids = db.insert_multiple(items)
 
     return doc_ids, items
 
 
 def update_document_status(
-    db: TinyDB,
-    query: Query,
+    db_fpath: str,
     file_path: str,
     new_status: Literal["deleted", "active"],
 ) -> List[int]:
@@ -208,22 +203,23 @@ def update_document_status(
     This function can be used to mark a document as "deleted".
 
     Args:
-        db (TinyDB): TinyDB instance.
-        query (Query): Query instance for querying the database.
+        db_fpath (str): File path of the TinyDB database.
         file_path (str): File path of the document to be updated.
         new_status (Literal["deleted", "active"]): New status to be set.
 
     Returns:
         List[int]: IDs of the updated documents in the TinyDB database.
     """
-    updated_ids = db.update(
-        {"status": new_status},
-        query.file_path == file_path,
-    )
+    query = Query()
+    with TinyDB(db_fpath) as db:
+        updated_ids = db.update(
+            {"status": new_status},
+            query.file_path == file_path,
+        )
     return updated_ids
 
 
-def find_existing_docs_by_var_request(
+def _find_existing_docs_by_var_request(
     db: TinyDB,
     query: Query,
     source_dataset: str,
@@ -278,8 +274,7 @@ def find_existing_docs_by_var_request(
 
 
 def find_existing_docs_by_request(
-    db: TinyDB,
-    query: Query,
+    db_fpath: str,
     source_dataset: str,
     request: Dict[str, Any],
 ) -> Dict[str, Dict[str, Any]]:
@@ -290,8 +285,7 @@ def find_existing_docs_by_request(
     for each data variable and have **overlapping** year, month, day, and time.
 
     Args:
-        db (TinyDB): TinyDB instance.
-        query (Query): Query instance for querying the database.
+        db_fpath (str): File path of the TinyDB database.
         source_dataset (str): Name of the source dataset.
         request (Dict[str, Any]): Request dictionary used to download the data.
 
@@ -300,23 +294,24 @@ def find_existing_docs_by_request(
             keyed by data variable.
     """
     filtered_docs = {}
-    for data_var in request.get("variable", []):
-        docs_var = find_existing_docs_by_var_request(
-            db,
-            query,
-            source_dataset,
-            request,
-            data_var,
-        )
-        if docs_var:
-            filtered_docs[data_var] = docs_var
+    query = Query()
+    with TinyDB(db_fpath) as db:
+        for data_var in request.get("variable", []):
+            docs_var = _find_existing_docs_by_var_request(
+                db,
+                query,
+                source_dataset,
+                request,
+                data_var,
+            )
+            if docs_var:
+                filtered_docs[data_var] = docs_var
 
     return filtered_docs
 
 
 def find_exsiting_docs_by_var_time(
-    db: TinyDB,
-    query: Query,
+    db_fpath: str,
     ds_name: str,
     product_type: str,
     data_var: str,
@@ -336,8 +331,7 @@ def find_exsiting_docs_by_var_time(
     **overlapping** year, month, day, and time will be retrieved.
 
     Args:
-        db (TinyDB): TinyDB instance.
-        query (Query): Query instance for querying the database.
+        db_fpath (str): File path of the TinyDB database.
         ds_name (str): Dataset name.
         product_type (str): Product type.
         data_var (str): Data variable name.
@@ -377,21 +371,23 @@ def find_exsiting_docs_by_var_time(
     # and overlapping year, month, day, time
     results = {}
     missing_ranges = []
-    for date_range in ranges:
-        years, months, days, times, _ = utils.extract_years_months_days_from_range(
-            date_range[0], date_range[1]
-        )  # TODO: update extract_years_months_days_from_range to return times as well
+    query = Query()
+    with TinyDB(db_fpath) as db:
+        for date_range in ranges:
+            years, months, days, times, _ = utils.extract_years_months_days_from_range(
+                date_range[0], date_range[1]
+            )  # TODO: update extract_years_months_days_from_range to return times as well
 
-        docs = db.search(
-            (query.hash == hash_value)
-            & query.year.any(years)
-            & query.month.any(months)
-            & query.day.any(days)
-            & query.time.any(times)
-        )
-        if docs:
-            results[(date_range[0], date_range[1])] = docs
-        else:
-            missing_ranges.append((date_range[0], date_range[1]))
+            docs = db.search(
+                (query.hash == hash_value)
+                & query.year.any(years)
+                & query.month.any(months)
+                & query.day.any(days)
+                & query.time.any(times)
+            )
+            if docs:
+                results[(date_range[0], date_range[1])] = docs
+            else:
+                missing_ranges.append((date_range[0], date_range[1]))
 
     return results, missing_ranges
