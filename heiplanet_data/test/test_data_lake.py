@@ -1,16 +1,5 @@
-import pytest
 from heiplanet_data import data_lake
-from tinydb import TinyDB
 import hashlib
-
-
-@pytest.fixture
-def get_db_query(tmp_path):
-    # create a sample data file
-    db_fpath = tmp_path / "test_db.json"
-    db = TinyDB(db_fpath)
-    query = data_lake.Query()
-    return db, query
 
 
 def test_get_db_fpath(get_db_query):
@@ -101,84 +90,33 @@ def test_create_single_signature():
     }
 
 
-def test_create_signatures():
+def test_create_signatures(get_mock_data):
+    ds_source, request, expected_signatures, _ = get_mock_data
     # with product_type
-    request = {
-        "product_type": ["monthly_averaged_reanalysis"],
-        "variable": ["t2m", "tp"],
-        "year": ["2016", "2017"],
-        "month": [
-            "01",
-        ],
-        "time": ["00:00"],
-        "data_format": "netcdf",
-        "download_format": "unarchived",
-    }
     signatures = data_lake._create_signatures(
-        source_dataset="era5-land",
+        source_dataset=ds_source,
         request=request,
     )
-    expected_signatures = [
-        {
-            "ds_name": "era5-land",
-            "product_type": ["monthly_averaged_reanalysis"],
-            "data_var": "t2m",
-        },
-        {
-            "ds_name": "era5-land",
-            "product_type": ["monthly_averaged_reanalysis"],
-            "data_var": "tp",
-        },
-    ]
     assert signatures == expected_signatures
 
     # without product_type
-    request = {
-        "variable": ["t2m", "tp"],
-        "year": ["2016", "2017"],
-        "month": [
-            "01",
-        ],
-        "time": ["00:00"],
-        "data_format": "netcdf",
-        "download_format": "unarchived",
-    }
+    request = request.copy()
+    request.pop("product_type")
     signatures_wo = data_lake._create_signatures(
-        source_dataset="era5-land",
+        source_dataset=ds_source,
         request=request,
     )
-    expected_signatures_wo = [
-        {
-            "ds_name": "era5-land",
-            "product_type": "",
-            "data_var": "t2m",
-        },
-        {
-            "ds_name": "era5-land",
-            "product_type": "",
-            "data_var": "tp",
-        },
-    ]
+    expected_signatures_wo = expected_signatures.copy()
+    for sig in expected_signatures_wo:
+        sig["product_type"] = ""
     assert signatures_wo == expected_signatures_wo
 
 
-def test_construct_item():
-    signature = {
-        "ds_name": "era5-land",
-        "product_type": ["monthly_averaged_reanalysis"],
-        "data_var": "t2m",
-    }
-    request = {
-        "product_type": ["monthly_averaged_reanalysis"],
-        "variable": ["t2m", "tp"],
-        "year": ["2016", "2017"],
-        "month": [
-            "01",
-        ],
-        "time": ["00:00"],
-        "data_format": "netcdf",
-        "download_format": "unarchived",
-    }
+def test_construct_item(get_mock_data):
+    _, request, signatures, signature_strs = get_mock_data
+    signature = signatures[0]
+    signature_str = signature_strs[0]
+
     item = data_lake._construct_item(
         signature,
         request,
@@ -187,9 +125,6 @@ def test_construct_item():
         status="active",
     )
 
-    signature_str = (
-        "data_var-t2m|ds_name-era5-land|product_type-monthly_averaged_reanalysis"
-    )
     hash_value = hashlib.sha256(signature_str.encode("utf-8")).hexdigest()
     expected_item = {
         "hash": hash_value,
@@ -207,26 +142,16 @@ def test_construct_item():
     assert item == expected_item
 
 
-def test_add_new_documents(get_db_query):
-    db, query = get_db_query
-    source_dataset = "era5-land"
-    request = {
-        "product_type": ["monthly_averaged_reanalysis"],
-        "variable": ["t2m", "tp"],
-        "year": ["2016", "2017"],
-        "month": [
-            "01",
-        ],
-        "time": ["00:00"],
-        "data_format": "netcdf",
-        "download_format": "unarchived",
-    }
+def test_add_new_documents(get_db_query, get_mock_data):
+    db, _ = get_db_query
+    ds_source, request, _, _ = get_mock_data
+
     downloaded_fpath = "test.nc"
     downloaded_at = "2026-02-13"
     db_fpath = db.storage._handle.name
     inserted_ids, inserted_items = data_lake.add_new_documents(
         db_fpath,
-        source_dataset,
+        ds_source,
         request,
         downloaded_fpath,
         downloaded_at,
@@ -239,3 +164,21 @@ def test_add_new_documents(get_db_query):
     for item_id, item in zip(inserted_ids, inserted_items):
         db_item = db.all()[item_id - 1]  # TinyDB ids start from 1
         assert db_item == item
+
+
+def test_update_document_status(get_db_query):
+    db, query = get_db_query
+    db_fpath = db.storage._handle.name
+
+    # insert a sample document
+    fpath = "tmp/test.nc"
+    item_id = db.insert({"file_path": fpath, "status": "active"})
+
+    # update the document status
+    new_status = "deleted"
+    updated_ids = data_lake.update_document_status(db_fpath, fpath, new_status)
+
+    # check if the status is updated in the db
+    db_item = db.search(query.file_path == fpath)[0]
+    assert db_item["status"] == new_status
+    assert updated_ids == [item_id]
