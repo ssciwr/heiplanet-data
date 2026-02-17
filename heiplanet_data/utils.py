@@ -262,15 +262,23 @@ def split_date_range_by_full_years(
 
 def extract_years_months_days_from_range(
     start_time: datetime, end_time: datetime
-) -> Tuple[List[str], List[str], List[str], bool]:
+) -> Tuple[List[str], List[str], List[str], List[str], bool]:
     """Extract years, months, and days from start and end datetime objects.
+    !!IMPORTANT: We do not consider minute and second for now!!
+    This is due to the nature of ERA5-Land datasets (checked on 2026-02-17).
+
+    Special case: midnight at both ends considered as full day.
+
     For simplicity:
         * If the start and end times are in different years,
-            all months and days are included.
+            all months, days, and hours are included.
         * If they are in the same year but different months,
-            all days are included.
+            all days and hours are included.
         * If they are in the same month,
-            only the days between start and end are included.
+            only the days between start and end are included,
+            all hours are included.
+        * If they are in the same day,
+            only the hours between start and end are included.
 
     Note: This function becomes inefficient when the range covers just a few days
         of different years. Use function split_date_range_by_full_years()
@@ -281,32 +289,60 @@ def extract_years_months_days_from_range(
         end_time (datetime): End datetime.
 
     Returns:
-        Tuple[List[str], List[str], List[str], bool]: Lists of years, months, and days
+        Tuple[List[str], List[str], List[str], List[str], bool]:
+            Lists of years, months, days and hours
             as strings and flag to indicate if we need to truncate data later
             to get the exact range.
             Months and days are formatted as two-digit strings.
+            Hours are formatted as "HH:MM" strings.
     """
     truncate_later = False
 
     years = [str(year) for year in range(start_time.year, end_time.year + 1)]
 
-    not_start_year = start_time.month != 1 or start_time.day != 1
-    not_end_year = end_time.month != 12 or end_time.day != 31
+    not_start_year = start_time.month != 1
+    not_end_year = end_time.month != 12
+    not_full_year = not_start_year or not_end_year
+    not_start_month = start_time.day != 1
+    not_end_month = end_time.day != 31  # TODO: how about 30 or 28/29?
+    not_full_month = not_start_month or not_end_month
+    not_start_day = start_time.hour != 0
+    not_end_day = end_time.hour != 23
+    midnight_case = start_time.hour == end_time.hour == 0
+    not_full_day = (not midnight_case) and (not_start_day or not_end_day)
+
+    if midnight_case:
+        hours = ["00:00"]
 
     if start_time.year != end_time.year:
         months = [str(month).zfill(2) for month in range(1, 13)]
         days = [str(day).zfill(2) for day in range(1, 32)]
-        if not_start_year or not_end_year:
+        if not midnight_case:
+            hours = [f"{hour:02d}:00" for hour in range(24)]
+        if not_full_year or not_full_month or not_full_day:
             truncate_later = True
     elif start_time.month != end_time.month:
         months = [
             f"{month:02d}" for month in range(start_time.month, end_time.month + 1)
         ]
         days = [f"{day:02d}" for day in range(1, 32)]
-        if not_start_year or not_end_year:
+        if not midnight_case:
+            hours = [f"{hour:02d}:00" for hour in range(24)]
+        if not_full_month or not_full_day:
+            truncate_later = True
+    elif start_time.day != end_time.day:
+        months = [f"{start_time.month:02d}"]
+        days = [f"{day:02d}" for day in range(start_time.day, end_time.day + 1)]
+        if not midnight_case:
+            hours = [f"{hour:02d}:00" for hour in range(24)]
+        if not_full_day:
             truncate_later = True
     else:
         months = [f"{start_time.month:02d}"]
-        days = [f"{day:02d}" for day in range(start_time.day, end_time.day + 1)]
+        days = [f"{start_time.day:02d}"]
+        if not midnight_case:
+            hours = [
+                f"{hour:02d}:00" for hour in range(start_time.hour, end_time.hour + 1)
+            ]
 
-    return years, months, days, truncate_later
+    return years, months, days, hours, truncate_later

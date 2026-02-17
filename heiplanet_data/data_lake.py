@@ -375,10 +375,12 @@ def find_exsiting_docs_by_var_time(
 
     # get time ranges from the start and end time
     try:
-        start_dt = datetime.strptime(start_time, "%Y-%m-%d-%H:%M")
-        end_dt = datetime.strptime(end_time, "%Y-%m-%d-%H:%M")
+        start_dt = datetime.strptime(start_time, "%Y-%m-%d-%H:%M:%S")
+        end_dt = datetime.strptime(end_time, "%Y-%m-%d-%H:%M:%S")
     except ValueError:
-        raise ValueError("start_time and end_time must be in '%Y-%m-%d-%H:%M' format.")
+        raise ValueError(
+            "start_time and end_time must be in '%Y-%m-%d-%H:%M:%S' format."
+        )
 
     ranges = utils.split_date_range_by_full_years(start_dt, end_dt)
 
@@ -389,16 +391,16 @@ def find_exsiting_docs_by_var_time(
     query = Query()
     with TinyDB(db_fpath) as db:
         for date_range in ranges:
-            years, months, days, times, _ = utils.extract_years_months_days_from_range(
+            years, months, days, hours, _ = utils.extract_years_months_days_from_range(
                 date_range[0], date_range[1]
-            )  # TODO: update extract_years_months_days_from_range to return times as well
+            )
 
             docs = db.search(
                 (query.hash == hash_value)
                 & query.year.any(years)
                 & query.month.any(months)
                 & query.day.any(days)
-                & query.time.any(times)
+                & query.time.any(hours)
             )
             if docs:
                 results[(date_range[0], date_range[1])] = docs

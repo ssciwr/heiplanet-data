@@ -112,7 +112,7 @@ def download_data_by_var_time(
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
     # get data for CDS request
-    years, months, days, time, truncate_later = (
+    years, months, days, hours, truncate_later = (
         utils.extract_years_months_days_from_range(start_time, end_time)
     )
 
@@ -122,12 +122,10 @@ def download_data_by_var_time(
         "year": years,
         "month": months,
         "day": days,
+        "time": hours,
         "data_format": data_format,
         "download_format": download_format,
     }
-
-    if time:
-        request["time"] = time
 
     if product_type:
         request["product_type"] = product_type
@@ -445,8 +443,8 @@ def _download_sub_tp_data(
     end_time = date_range[1]
 
     # get data for CDS request
-    years, months, days, truncate_later = utils.extract_years_months_days_from_range(
-        start_time, end_time
+    years, months, days, hours, truncate_later = (
+        utils.extract_years_months_days_from_range(start_time, end_time)
     )
 
     # build CDS request
@@ -455,7 +453,7 @@ def _download_sub_tp_data(
         "year": years,
         "month": months,
         "day": days,
-        "time": ["00:00"],
+        "time": ["00:00"],  # ignore hours and consider midnight case for tp
         "data_format": data_format,
         "download_format": "unarchived",
     }

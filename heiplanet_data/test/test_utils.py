@@ -456,58 +456,97 @@ def test_split_date_range_by_full_years():
 def test_extract_years_months_days_from_range():
     all_months = [str(i).zfill(2) for i in range(1, 13)]
     all_days = [str(i).zfill(2) for i in range(1, 32)]
+    all_hours = [f"{hour:02d}:00" for hour in range(24)]
 
-    # diff years, full months and days
-    start_time = datetime.strptime("2024-01-01", "%Y-%m-%d")
-    end_time = datetime.strptime("2025-12-31", "%Y-%m-%d")
-    years, months, days, truncate = utils.extract_years_months_days_from_range(
+    # diff years, full months, days, and hours
+    start_time = datetime.strptime("2024-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_time = datetime.strptime("2025-12-31 23:00:00", "%Y-%m-%d %H:%M:%S")
+    years, months, days, hours, truncate = utils.extract_years_months_days_from_range(
         start_time, end_time
     )
     assert years == ["2024", "2025"]
     assert months == all_months
     assert days == all_days
+    assert hours == all_hours
     assert truncate is False
 
-    # diff years, partial months or days
-    start_time = datetime.strptime("2026-03-15", "%Y-%m-%d")
-    end_time = datetime.strptime("2027-10-20", "%Y-%m-%d")
-    years, months, days, truncate = utils.extract_years_months_days_from_range(
+    # diff years, partial months, days, or hours
+    start_time = datetime.strptime("2026-03-15 01:00:00", "%Y-%m-%d %H:%M:%S")
+    end_time = datetime.strptime("2027-10-20 15:00:00", "%Y-%m-%d %H:%M:%S")
+    years, months, days, hours, truncate = utils.extract_years_months_days_from_range(
         start_time, end_time
     )
     assert years == ["2026", "2027"]
     assert months == all_months
     assert days == all_days
+    assert hours == all_hours
     assert truncate is True
 
-    # same years, full months and days
-    start_time = datetime.strptime("2025-01-01", "%Y-%m-%d")
-    end_time = datetime.strptime("2025-12-31", "%Y-%m-%d")
-    years, months, days, truncate = utils.extract_years_months_days_from_range(
+    # same years, full months, days, and hours
+    start_time = datetime.strptime("2025-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_time = datetime.strptime("2025-12-31 23:00:00", "%Y-%m-%d %H:%M:%S")
+    years, months, days, hours, truncate = utils.extract_years_months_days_from_range(
         start_time, end_time
     )
     assert years == ["2025"]
     assert months == all_months
     assert days == all_days
+    assert hours == all_hours
     assert truncate is False
 
-    # same years, diff months
-    start_time = datetime.strptime("2025-03-10", "%Y-%m-%d")
-    end_time = datetime.strptime("2025-10-25", "%Y-%m-%d")
-    years, months, days, truncate = utils.extract_years_months_days_from_range(
+    # same years, diff months, midnight at both ends
+    start_time = datetime.strptime("2025-03-10 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_time = datetime.strptime("2025-10-25 00:00:00", "%Y-%m-%d %H:%M:%S")
+    years, months, days, hours, truncate = utils.extract_years_months_days_from_range(
         start_time, end_time
     )
     assert years == ["2025"]
     assert months == [str(i).zfill(2) for i in range(3, 11)]
     assert days == all_days
+    assert hours == ["00:00"]
     assert truncate is True
 
-    # same years, same months, diff days
-    start_time = datetime.strptime("2025-05-10", "%Y-%m-%d")
-    end_time = datetime.strptime("2025-05-25", "%Y-%m-%d")
-    years, months, days, truncate = utils.extract_years_months_days_from_range(
+    # same years, same months, diff days, diff hours
+    start_time = datetime.strptime("2025-05-10 12:00:00", "%Y-%m-%d %H:%M:%S")
+    end_time = datetime.strptime("2025-05-25 21:00:00", "%Y-%m-%d %H:%M:%S")
+    years, months, days, hours, truncate = utils.extract_years_months_days_from_range(
         start_time, end_time
     )
     assert years == ["2025"]
     assert months == ["05"]
     assert days == [str(i).zfill(2) for i in range(10, 26)]
+    assert hours == all_hours
+    assert truncate is True
+
+    # same years, same months, diff days, midnight at both ends
+    start_time = datetime.strptime("2025-05-10 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_time = datetime.strptime("2025-05-25 00:00:00", "%Y-%m-%d %H:%M:%S")
+    years, months, days, hours, truncate = utils.extract_years_months_days_from_range(
+        start_time, end_time
+    )
+    assert years == ["2025"]
+    assert months == ["05"]
+    assert days == [str(i).zfill(2) for i in range(10, 26)]
+    assert hours == ["00:00"]
+    assert truncate is False
+
+    # same years, same months, same days, diff hours
+    start_time = datetime.strptime("2025-05-10 12:00:00", "%Y-%m-%d %H:%M:%S")
+    end_time = datetime.strptime("2025-05-10 21:00:00", "%Y-%m-%d %H:%M:%S")
+    years, months, days, hours, truncate = utils.extract_years_months_days_from_range(
+        start_time, end_time
+    )
+    assert years == ["2025"]
+    assert months == ["05"]
+    assert days == ["10"]
+    assert hours == [f"{hour:02d}:00" for hour in range(12, 22)]
+    assert truncate is False
+
+    # same years, same months, same days, midnight at both ends
+    start_time = datetime.strptime("2025-05-10 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_time = datetime.strptime("2025-05-10 00:00:00", "%Y-%m-%d %H:%M:%S")
+    years, months, days, hours, truncate = utils.extract_years_months_days_from_range(
+        start_time, end_time
+    )
+    assert hours == ["00:00"]
     assert truncate is False
