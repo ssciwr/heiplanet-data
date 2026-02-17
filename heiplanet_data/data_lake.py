@@ -78,6 +78,9 @@ def _create_single_signature(
     Returns:
         Dict[str, Any]: Signature dictionary.
     """
+    if not source_dataset or not data_var:
+        raise ValueError("Names of source dataset and data variable must be provided.")
+
     signature_var = {
         "ds_name": source_dataset,
         "product_type": product_type,
