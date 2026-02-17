@@ -708,7 +708,7 @@ def extract_data_by_var_time(
             and the path to the file where the dataset is saved.
     """
     # find exsisting documents that match the query
-    candidate_docs, missing_ranges = data_lake.find_exsiting_docs_by_var_time(
+    candidate_docs, missing_ranges = data_lake.find_existing_docs_by_var_time(
         db,
         query,
         ds_name,

@@ -64,7 +64,7 @@ def _compute_hash_value(signature_data: Dict[str, Any]) -> str:
 
 def _create_single_signature(
     source_dataset: str,
-    product_type: str,
+    product_type: List[str],
     data_var: str,
 ) -> Dict[str, Any]:
     """Create a signature dictionary for a single data variable
@@ -72,7 +72,7 @@ def _create_single_signature(
 
     Args:
         source_dataset (str): Name of the source dataset.
-        product_type (str): Product type.
+        product_type (List[str]): Product type.
         data_var (str): Data variable.
 
     Returns:
@@ -107,7 +107,7 @@ def _create_signatures(
     for data_var in request.get("variable", []):
         signature_var = _create_single_signature(
             source_dataset,
-            request.get("product_type", ""),
+            request.get("product_type", []),
             data_var,
         )
         signatures.append(signature_var)
@@ -325,7 +325,7 @@ def find_existing_docs_by_request(
     return filtered_docs
 
 
-def find_exsiting_docs_by_var_time(
+def find_existing_docs_by_var_time(
     db_fpath: str,
     ds_name: str,
     product_type: str,
@@ -365,24 +365,33 @@ def find_exsiting_docs_by_var_time(
               by any existing documents in the data lake.
     """
     # TODO: how about data_format, download_format, and area?
-    # create signature
-    signature_var = _create_single_signature(
-        ds_name,
-        product_type,
-        data_var,
-    )
-    hash_value = _compute_hash_value(signature_var)
 
     # get time ranges from the start and end time
     try:
         start_dt = datetime.strptime(start_time, "%Y-%m-%d-%H:%M:%S")
         end_dt = datetime.strptime(end_time, "%Y-%m-%d-%H:%M:%S")
     except ValueError:
-        raise ValueError(
-            "start_time and end_time must be in '%Y-%m-%d-%H:%M:%S' format."
-        )
+        try:
+            start_dt = datetime.strptime(start_time, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_time, "%Y-%m-%d")
+        except Exception as e:
+            raise ValueError(
+                "start_time and end_time must be in '%Y-%m-%d-%H:%M:%S' "
+                "or '%Y-%m-%d' format.",
+                e,
+            )
 
     ranges = utils.split_date_range_by_full_years(start_dt, end_dt)
+
+    # create signature and hash value
+    signature_var = _create_single_signature(
+        ds_name,
+        (
+            [product_type] if product_type else []
+        ),  # converted to list due to ERA5-Land product type format
+        data_var,
+    )
+    hash_value = _compute_hash_value(signature_var)
 
     # find exsiting documents with same signatures
     # and overlapping year, month, day, time
@@ -397,10 +406,19 @@ def find_exsiting_docs_by_var_time(
 
             docs = db.search(
                 (query.hash == hash_value)
-                & query.year.any(years)
-                & query.month.any(months)
-                & query.day.any(days)
-                & query.time.any(hours)
+                & (
+                    (query.year == [])
+                    | (query.year.any(years) if years else query.noop())
+                )
+                & (
+                    (query.month == [])
+                    | (query.month.any(months) if months else query.noop())
+                )
+                & ((query.day == []) | (query.day.any(days) if days else query.noop()))
+                & (
+                    (query.time == [])
+                    | (query.time.any(hours) if hours else query.noop())
+                )
             )
             if docs:
                 results[(date_range[0], date_range[1])] = docs

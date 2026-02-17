@@ -1,6 +1,7 @@
 from heiplanet_data import data_lake
 import pytest
 from tinydb import Query
+from datetime import datetime
 
 
 def test_get_db_fpath(get_empty_db_query):
@@ -19,6 +20,8 @@ def test_convert_to_canonicalized_str():
     assert data_lake._convert_to_canonicalized_str(None) == "None"
     assert data_lake._convert_to_canonicalized_str(b"byte") == "b'byte'"
     assert data_lake._convert_to_canonicalized_str("") == ""
+    assert data_lake._convert_to_canonicalized_str([]) == ""
+    assert data_lake._convert_to_canonicalized_str({}) == ""
 
     # flat list
     assert data_lake._convert_to_canonicalized_str([3, 1, 2]) == "1|2|3"
@@ -83,25 +86,25 @@ def test_compute_hash_value():
 def test_create_single_signature():
     assert data_lake._create_single_signature(
         source_dataset="era5-land",
-        product_type="reanalysis",
+        product_type=["reanalysis"],
         data_var="t2m",
     ) == {
         "ds_name": "era5-land",
-        "product_type": "reanalysis",
+        "product_type": ["reanalysis"],
         "data_var": "t2m",
     }
 
     with pytest.raises(ValueError):
         data_lake._create_single_signature(
             source_dataset="era5-land",
-            product_type="reanalysis",
+            product_type=["reanalysis"],
             data_var="",
         )
 
     with pytest.raises(ValueError):
         data_lake._create_single_signature(
             source_dataset="",
-            product_type="reanalysis",
+            product_type=["reanalysis"],
             data_var="t2m",
         )
 
@@ -124,7 +127,7 @@ def test_create_signatures(get_mock_data):
     )
     expected_signatures_wo = expected_signatures.copy()
     for sig in expected_signatures_wo:
-        sig["product_type"] = ""
+        sig["product_type"] = []
     assert signatures_wo == expected_signatures_wo
 
 
@@ -410,5 +413,67 @@ def test_find_existing_docs_by_request_full_ymdt(get_db_with_mock_data, get_mock
         )
 
 
-def test_find_exsiting_docs_by_var_time():
-    pass
+def test_find_existing_docs_by_var_time_invalid():
+    with pytest.raises(ValueError):
+        data_lake.find_existing_docs_by_var_time(
+            db_fpath="test_db.json",
+            ds_name="era5-land",
+            product_type="reanalysis",
+            data_var="t2m",
+            start_time="something_wrong",  # invalid format
+            end_time=123456789,  # invalid format
+        )
+
+
+def test_find_existing_docs_by_var_time_no_match(get_db_with_mock_data, get_mock_data):
+    ds_source, request, signatures, _ = get_mock_data
+
+    product_type = request["product_type"][0]
+
+    # no match due to non-overlapping time range
+    for signature in signatures:
+        data_var = signature["data_var"]
+        results, missing_ranges = data_lake.find_existing_docs_by_var_time(
+            db_fpath=get_db_with_mock_data.storage._handle.name,
+            ds_name=ds_source,
+            product_type=product_type,
+            data_var=data_var,
+            start_time="2018-01-01",
+            end_time="2019-12-31",
+        )
+        assert len(results) == 0
+        assert len(missing_ranges) == 1
+        assert missing_ranges[0][0] == datetime.strptime("2018-01-01", "%Y-%m-%d")
+        assert missing_ranges[0][1] == datetime.strptime("2019-12-31", "%Y-%m-%d")
+
+    # no match due to different source name, product type, or data variable
+    results, missing_ranges = data_lake.find_existing_docs_by_var_time(
+        db_fpath=get_db_with_mock_data.storage._handle.name,
+        ds_name=ds_source + "_different",
+        product_type=product_type,
+        data_var="t2m",
+        start_time="2016-01-01",
+        end_time="2016-02-28",
+    )
+    assert len(results) == 0
+    assert len(missing_ranges) == 1
+
+    results, missing_ranges = data_lake.find_existing_docs_by_var_time(
+        db_fpath=get_db_with_mock_data.storage._handle.name,
+        ds_name=ds_source,
+        product_type=product_type + "_different",
+        data_var="t2m",
+        start_time="2016-01-01",
+        end_time="2016-02-28",
+    )
+    assert len(results) == 0
+
+    results, missing_ranges = data_lake.find_existing_docs_by_var_time(
+        db_fpath=get_db_with_mock_data.storage._handle.name,
+        ds_name=ds_source,
+        product_type=product_type,
+        data_var="different_var",
+        start_time="2016-01-01",
+        end_time="2017-12-31",
+    )
+    assert len(results) == 0
