@@ -236,6 +236,9 @@ def _find_existing_docs_by_var_request(
     - Retrieve all documents with the same signature,
         i.e. source_dataset, product_type, and data variable
     - Get documents with overlapping year, month, day, and time
+        !!IMPORTANT: empty month / day / time in db item
+        means all months / days / times,
+        and will overlap with any month / day / time!!
 
     Args:
         db (TinyDB): TinyDB instance.
@@ -259,18 +262,27 @@ def _find_existing_docs_by_var_request(
 
     # find existing documents with same signatures
     # and overlapping year, month, day, time
-    req_years = set(request.get("year", []))
-    req_months = set(request.get("month", []))
-    req_days = set(request.get("day", []))
-    req_times = set(request.get("time", []))
+    req_years = list(request.get("year", []))
+    req_months = list(request.get("month", []))
+    req_days = list(request.get("day", []))
+    req_times = list(request.get("time", []))
     hash_value = _compute_hash_value(signature_var)
 
     results = db.search(
         (query.hash == hash_value)
-        & query.year.any(req_years)
-        & query.month.any(req_months)
-        & query.day.any(req_days)
-        & query.time.any(req_times)
+        & (
+            (query.year == [])
+            | (query.year.any(req_years) if req_years else query.noop())
+        )
+        & (
+            (query.month == [])
+            | (query.month.any(req_months) if req_months else query.noop())
+        )
+        & ((query.day == []) | (query.day.any(req_days) if req_days else query.noop()))
+        & (
+            (query.time == [])
+            | (query.time.any(req_times) if req_times else query.noop())
+        )
     )
 
     return results

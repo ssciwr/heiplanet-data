@@ -18,6 +18,7 @@ def test_convert_to_canonicalized_str():
     assert data_lake._convert_to_canonicalized_str(True) == "True"
     assert data_lake._convert_to_canonicalized_str(None) == "None"
     assert data_lake._convert_to_canonicalized_str(b"byte") == "b'byte'"
+    assert data_lake._convert_to_canonicalized_str("") == ""
 
     # flat list
     assert data_lake._convert_to_canonicalized_str([3, 1, 2]) == "1|2|3"
@@ -194,6 +195,220 @@ def test_update_document_status(get_db_with_mock_data):
         assert db_item["status"] == new_status
 
 
-def test_find_existing_docs_by_var_request_invalid(get_empty_db_query, get_mock_data):
-    db, query = get_empty_db_query
+def test_find_existing_docs_by_var_request_invalid(
+    get_db_with_mock_data, get_mock_data
+):
     ds_source, request, _, _ = get_mock_data
+
+    with pytest.raises(ValueError):
+        data_lake._find_existing_docs_by_var_request(
+            db=get_db_with_mock_data,
+            query=Query(),
+            source_dataset=ds_source,
+            request=request,
+            data_var="invalid_var",
+        )
+
+
+def test_find_existing_docs_by_var_request_exact_match(
+    get_db_with_mock_data, get_mock_data
+):
+    ds_source, request, signatures, _ = get_mock_data
+
+    for idx in range(len(signatures)):
+        data_var = signatures[idx]["data_var"]
+        existing_docs = data_lake._find_existing_docs_by_var_request(
+            db=get_db_with_mock_data,
+            query=Query(),
+            source_dataset=ds_source,
+            request=request,
+            data_var=data_var,
+        )
+        assert len(existing_docs) == 1
+        assert existing_docs[0]["signature"]["data_var"] == data_var
+        assert (
+            existing_docs[0]["file_path"]
+            == get_db_with_mock_data.all()[idx]["file_path"]
+        )
+
+
+def test_find_existing_docs_by_var_request_no_match(
+    get_db_with_mock_data, get_mock_data
+):
+    ds_source, request, signatures, _ = get_mock_data
+
+    # no match due to source dataset
+    for signature in signatures:
+        data_var = signature["data_var"]
+        existing_docs = data_lake._find_existing_docs_by_var_request(
+            db=get_db_with_mock_data,
+            query=Query(),
+            source_dataset=ds_source + "_different",
+            request=request,
+            data_var=data_var,
+        )
+        assert len(existing_docs) == 0
+
+    # no match due to request
+    modified_request = request.copy()
+    modified_request["month"] = ["02"]  # different month
+    for signature in signatures:
+        data_var = signature["data_var"]
+        existing_docs = data_lake._find_existing_docs_by_var_request(
+            db=get_db_with_mock_data,
+            query=Query(),
+            source_dataset=ds_source,
+            request=modified_request,
+            data_var=data_var,
+        )
+        assert len(existing_docs) == 0
+
+
+def test_find_existing_docs_by_var_request_partial_match(
+    get_db_with_mock_data, get_mock_data
+):
+    ds_source, request, signatures, _ = get_mock_data
+
+    modified_request = request.copy()
+    modified_request["year"] = ["2017", "2018"]  # overlap with original years
+
+    for idx in range(len(signatures)):
+        data_var = signatures[idx]["data_var"]
+        existing_docs = data_lake._find_existing_docs_by_var_request(
+            db=get_db_with_mock_data,
+            query=Query(),
+            source_dataset=ds_source,
+            request=modified_request,
+            data_var=data_var,
+        )
+        assert len(existing_docs) == 1
+        assert (
+            existing_docs[0]["file_path"]
+            == get_db_with_mock_data.all()[idx]["file_path"]
+        )
+
+
+def test_find_existing_docs_by_var_request_full_ymdt(
+    get_db_with_mock_data, get_mock_data
+):
+    ds_source, request, signatures, _ = get_mock_data
+
+    # data in the db has year 2016-2017, month 01, time 00:00
+    # meaning all days in Jan 2016 and Jan 2017 at 00:00 are covered
+
+    modified_request = request.copy()
+    modified_request["day"] = ["11", "12"]
+
+    for idx in range(len(signatures)):
+        data_var = signatures[idx]["data_var"]
+        existing_docs = data_lake._find_existing_docs_by_var_request(
+            db=get_db_with_mock_data,
+            query=Query(),
+            source_dataset=ds_source,
+            request=modified_request,
+            data_var=data_var,
+        )
+        assert len(existing_docs) == 1
+        assert (
+            existing_docs[0]["file_path"]
+            == get_db_with_mock_data.all()[idx]["file_path"]
+        )
+
+
+def test_find_existing_docs_by_request_exact_match(
+    get_db_with_mock_data, get_mock_data
+):
+    ds_source, request, signatures, _ = get_mock_data
+
+    filtered_docs = data_lake.find_existing_docs_by_request(
+        db_fpath=get_db_with_mock_data.storage._handle.name,
+        source_dataset=ds_source,
+        request=request,
+    )
+
+    assert len(filtered_docs) == 2
+    for idx in range(len(signatures)):
+        data_var = signatures[idx]["data_var"]
+        matched_docs = filtered_docs[data_var]
+        assert len(matched_docs) == 1
+        assert (
+            matched_docs[0]["file_path"]
+            == get_db_with_mock_data.all()[idx]["file_path"]
+        )
+
+
+def test_find_existing_docs_by_request_no_match(get_db_with_mock_data, get_mock_data):
+    ds_source, request, _, _ = get_mock_data
+
+    # no match due to source dataset
+    filtered_docs = data_lake.find_existing_docs_by_request(
+        db_fpath=get_db_with_mock_data.storage._handle.name,
+        source_dataset=ds_source + "_different",
+        request=request,
+    )
+
+    assert len(filtered_docs) == 0
+
+    # no match due to request
+    modified_request = request.copy()
+    modified_request["month"] = ["02"]  # different month
+
+    filtered_docs = data_lake.find_existing_docs_by_request(
+        db_fpath=get_db_with_mock_data.storage._handle.name,
+        source_dataset=ds_source,
+        request=modified_request,
+    )
+
+    assert len(filtered_docs) == 0
+
+
+def test_find_existing_docs_by_request_partial_match(
+    get_db_with_mock_data, get_mock_data
+):
+    ds_source, request, signatures, _ = get_mock_data
+
+    modified_request = request.copy()
+    modified_request["month"] = ["01", "02"]  # overlap with original months
+
+    filtered_docs = data_lake.find_existing_docs_by_request(
+        db_fpath=get_db_with_mock_data.storage._handle.name,
+        source_dataset=ds_source,
+        request=modified_request,
+    )
+
+    assert len(filtered_docs) == 2
+    for idx in range(len(signatures)):
+        data_var = signatures[idx]["data_var"]
+        matched_docs = filtered_docs[data_var]
+        assert len(matched_docs) == 1
+        assert (
+            matched_docs[0]["file_path"]
+            == get_db_with_mock_data.all()[idx]["file_path"]
+        )
+
+
+def test_find_existing_docs_by_request_full_ymdt(get_db_with_mock_data, get_mock_data):
+    ds_source, request, signatures, _ = get_mock_data
+
+    modified_request = request.copy()
+    modified_request["day"] = ["21", "25"]  # all days in Jan are covered
+
+    filtered_docs = data_lake.find_existing_docs_by_request(
+        db_fpath=get_db_with_mock_data.storage._handle.name,
+        source_dataset=ds_source,
+        request=modified_request,
+    )
+
+    assert len(filtered_docs) == 2
+    for idx in range(len(signatures)):
+        data_var = signatures[idx]["data_var"]
+        matched_docs = filtered_docs[data_var]
+        assert len(matched_docs) == 1
+        assert (
+            matched_docs[0]["file_path"]
+            == get_db_with_mock_data.all()[idx]["file_path"]
+        )
+
+
+def test_find_exsiting_docs_by_var_time():
+    pass
