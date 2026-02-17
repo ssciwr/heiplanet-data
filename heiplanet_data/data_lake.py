@@ -391,7 +391,7 @@ def find_exsiting_docs_by_var_time(
     query = Query()
     with TinyDB(db_fpath) as db:
         for date_range in ranges:
-            years, months, days, hours, _ = utils.extract_years_months_days_from_range(
+            years, months, days, hours, _ = utils.extract_time_from_range(
                 date_range[0], date_range[1]
             )
 

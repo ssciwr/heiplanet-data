@@ -260,10 +260,10 @@ def split_date_range_by_full_years(
     return ranges
 
 
-def extract_years_months_days_from_range(
+def extract_time_from_range(
     start_time: datetime, end_time: datetime
 ) -> Tuple[List[str], List[str], List[str], List[str], bool]:
-    """Extract years, months, and days from start and end datetime objects.
+    """Extract years, months, days, and hours from start and end datetime objects.
     !!IMPORTANT: We do not consider minute and second for now!!
     This is due to the nature of ERA5-Land datasets (checked on 2026-02-17).
 

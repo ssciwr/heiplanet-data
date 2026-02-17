@@ -112,8 +112,8 @@ def download_data_by_var_time(
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
     # get data for CDS request
-    years, months, days, hours, truncate_later = (
-        utils.extract_years_months_days_from_range(start_time, end_time)
+    years, months, days, hours, truncate_later = utils.extract_time_from_range(
+        start_time, end_time
     )
 
     # build CDS request
@@ -443,8 +443,8 @@ def _download_sub_tp_data(
     end_time = date_range[1]
 
     # get data for CDS request
-    years, months, days, hours, truncate_later = (
-        utils.extract_years_months_days_from_range(start_time, end_time)
+    years, months, days, hours, truncate_later = utils.extract_time_from_range(
+        start_time, end_time
     )
 
     # build CDS request
