@@ -313,7 +313,7 @@ def downsample_resolution_with_xarray(
     lon_name: str = "longitude",
     agg_funcs: Dict[str, str] | None = None,
 ) -> xr.Dataset:
-    """Downsample the resolution of a dataset.
+    """Downsample the resolution of a dataset with xarray.coarsen().
 
     Args:
         dataset (xr.Dataset): Dataset to change resolution.
@@ -743,6 +743,9 @@ def upsample_resolution(
     method_map: Dict[str, str] | None = None,
 ) -> xr.Dataset:
     """Upsample the resolution of a dataset using `xarray.interp`.
+    Interpolation methods supported by `xarray.interp` include:
+    "linear", "nearest", "zero", "slinear", "quadratic", "cubic",
+    "quintic", "polynomial", "pchip", "barycentric", "krogh", "akima", "makima"
 
     Args:
         dataset (xr.Dataset): Dataset to change resolution.
