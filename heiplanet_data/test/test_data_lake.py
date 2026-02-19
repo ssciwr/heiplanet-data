@@ -1,7 +1,6 @@
 from heiplanet_data import data_lake
 import pytest
 from tinydb import Query
-from datetime import datetime
 
 
 def test_get_db_fpath(get_empty_db_query):
@@ -417,7 +416,7 @@ def test_find_existing_docs_by_var_time_invalid():
     with pytest.raises(ValueError):
         data_lake.find_existing_docs_by_var_time(
             db_fpath="test_db.json",
-            ds_name="era5-land",
+            source_dataset="era5-land",
             product_type="reanalysis",
             data_var="t2m",
             start_time="something_wrong",  # invalid format
@@ -428,39 +427,50 @@ def test_find_existing_docs_by_var_time_invalid():
 def test_find_existing_docs_by_var_time_no_match(get_db_with_mock_data, get_mock_data):
     ds_source, request, signatures, _ = get_mock_data
 
+    all_days = [f"{day:02d}" for day in range(1, 32)]
+    all_months = [f"{month:02d}" for month in range(1, 13)]
+
     product_type = request["product_type"][0]
 
     # no match due to non-overlapping time range
     for signature in signatures:
         data_var = signature["data_var"]
-        results, missing_ranges = data_lake.find_existing_docs_by_var_time(
+        results, missing_requests = data_lake.find_existing_docs_by_var_time(
             db_fpath=get_db_with_mock_data.storage._handle.name,
-            ds_name=ds_source,
+            source_dataset=ds_source,
             product_type=product_type,
             data_var=data_var,
             start_time="2018-01-01",
             end_time="2019-12-31",
         )
         assert len(results) == 0
-        assert len(missing_ranges) == 1
-        assert missing_ranges[0][0] == datetime.strptime("2018-01-01", "%Y-%m-%d")
-        assert missing_ranges[0][1] == datetime.strptime("2019-12-31", "%Y-%m-%d")
+        assert len(missing_requests) == 1
+        assert missing_requests[0]["variable"] == [data_var]
+        assert missing_requests[0]["year"] == ["2018", "2019"]
+        assert missing_requests[0]["month"] == all_months
+        assert missing_requests[0]["day"] == all_days
+        assert missing_requests[0]["time"] == ["00:00"]
 
     # no match due to different source name, product type, or data variable
-    results, missing_ranges = data_lake.find_existing_docs_by_var_time(
+    results, missing_requests = data_lake.find_existing_docs_by_var_time(
         db_fpath=get_db_with_mock_data.storage._handle.name,
-        ds_name=ds_source + "_different",
+        source_dataset=ds_source + "_different",
         product_type=product_type,
         data_var="t2m",
         start_time="2016-01-01",
         end_time="2016-02-28",
     )
     assert len(results) == 0
-    assert len(missing_ranges) == 1
+    assert len(missing_requests) == 1
+    assert missing_requests[0]["variable"] == ["t2m"]
+    assert missing_requests[0]["year"] == ["2016"]
+    assert missing_requests[0]["month"] == ["01", "02"]
+    assert missing_requests[0]["day"] == all_days
+    assert missing_requests[0]["time"] == ["00:00"]
 
-    results, missing_ranges = data_lake.find_existing_docs_by_var_time(
+    results, _ = data_lake.find_existing_docs_by_var_time(
         db_fpath=get_db_with_mock_data.storage._handle.name,
-        ds_name=ds_source,
+        source_dataset=ds_source,
         product_type=product_type + "_different",
         data_var="t2m",
         start_time="2016-01-01",
@@ -468,12 +478,34 @@ def test_find_existing_docs_by_var_time_no_match(get_db_with_mock_data, get_mock
     )
     assert len(results) == 0
 
-    results, missing_ranges = data_lake.find_existing_docs_by_var_time(
+    results, _ = data_lake.find_existing_docs_by_var_time(
         db_fpath=get_db_with_mock_data.storage._handle.name,
-        ds_name=ds_source,
+        source_dataset=ds_source,
         product_type=product_type,
         data_var="different_var",
         start_time="2016-01-01",
         end_time="2017-12-31",
     )
     assert len(results) == 0
+
+
+def test_find_existing_docs_by_var_time_partial_match(
+    get_db_with_mock_data, get_mock_data
+):
+    ds_source, request, signatures, _ = get_mock_data
+
+    product_type = request["product_type"][0]
+
+    # time at midnight
+    for signature in signatures:
+        data_var = signature["data_var"]
+        results, missing_requests = data_lake.find_existing_docs_by_var_time(
+            db_fpath=get_db_with_mock_data.storage._handle.name,
+            source_dataset=ds_source,
+            product_type=product_type,
+            data_var=data_var,
+            start_time="2017-01-01",
+            end_time="2018-12-31",
+        )
+        assert len(results) == 1
+        # TODO: check missing requests

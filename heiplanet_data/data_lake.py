@@ -327,14 +327,17 @@ def find_existing_docs_by_request(
 
 def find_existing_docs_by_var_time(
     db_fpath: str,
-    ds_name: str,
-    product_type: str,
+    source_dataset: str,
+    product_type: str | None,
     data_var: str,
     start_time: str,
     end_time: str,
+    area: List[float] | None = None,
+    data_format: str | None = None,
+    download_format: str | None = None,
 ) -> Tuple[
     Dict[Tuple[datetime, datetime], List[Dict[str, Any]]],
-    List[Tuple[datetime, datetime]],
+    List[Dict[str, Any]],
 ]:
     """Find all documents that contain data for a specific data variable,
     from a dataset with a specific product type,
@@ -347,22 +350,22 @@ def find_existing_docs_by_var_time(
 
     Args:
         db_fpath (str): File path of the TinyDB database.
-        ds_name (str): Dataset name.
-        product_type (str): Product type.
+        source_dataset (str): Name of the source dataset.
+        product_type (str | None): Product type.
         data_var (str): Data variable name.
         start_time (str): Start time in "%Y-%m-%d-%H:%M" format.
         end_time (str): End time in "%Y-%m-%d-%H:%M" format.
 
     Returns:
-        Tuple[Dict[Tuple[datetime, datetime], Dict[str, Any]],
-              List[Tuple[datetime, datetime]]]:
-            A tuple containing:
-            - A dictionary where keys are tuples of (start_datetime, end_datetime)
-              representing the time ranges with existing documents,
-              and values are the corresponding documents.
-            - A list of tuples of (start_datetime, end_datetime)
-              representing the time ranges that are not covered
-              by any existing documents in the data lake.
+        Tuple[
+            Dict[Tuple[datetime, datetime], List[Dict[str, Any]]],
+            List[Dict[str, Any]],
+        ]: A tuple containing:
+            - A dictionary of documents that match the criteria,
+                keyed by the overlapping ranges (start and end datetimes).
+            - A list of missing requests that should be used
+                to download the missing data,
+                each request follows CDS API format.
     """
     # TODO: how about data_format, download_format, and area?
 
@@ -383,20 +386,8 @@ def find_existing_docs_by_var_time(
 
     ranges = utils.split_date_range_by_full_years(start_dt, end_dt)
 
-    # create signature and hash value
-    signature_var = _create_single_signature(
-        ds_name,
-        (
-            [product_type] if product_type else []
-        ),  # converted to list due to ERA5-Land product type format
-        data_var,
-    )
-    hash_value = _compute_hash_value(signature_var)
-
-    # find exsiting documents with same signatures
-    # and overlapping year, month, day, time
     results = {}
-    missing_ranges = []
+    missing_requests = []
     query = Query()
     with TinyDB(db_fpath) as db:
         for date_range in ranges:
@@ -404,25 +395,35 @@ def find_existing_docs_by_var_time(
                 date_range[0], date_range[1]
             )
 
-            docs = db.search(
-                (query.hash == hash_value)
-                & (
-                    (query.year == [])
-                    | (query.year.any(years) if years else query.noop())
-                )
-                & (
-                    (query.month == [])
-                    | (query.month.any(months) if months else query.noop())
-                )
-                & ((query.day == []) | (query.day.any(days) if days else query.noop()))
-                & (
-                    (query.time == [])
-                    | (query.time.any(hours) if hours else query.noop())
-                )
-            )
-            if docs:
-                results[(date_range[0], date_range[1])] = docs
-            else:
-                missing_ranges.append((date_range[0], date_range[1]))
+            # create request
+            request = {
+                "variable": [data_var],
+                "year": years,
+                "month": months,
+                "day": days,
+                "time": hours,
+                "data_format": data_format if data_format else "netcdf",
+                "download_format": download_format if download_format else "unarchived",
+            }
 
-    return results, missing_ranges
+            if product_type:
+                request["product_type"] = [product_type]
+
+            if area:
+                request["area"] = area
+
+            # find related docs
+            docs = _find_existing_docs_by_var_request(
+                db,
+                query,
+                source_dataset,
+                request,
+                data_var,
+            )
+
+            if docs:
+                results[date_range] = docs
+            else:
+                missing_requests.append(request)
+
+    return results, missing_requests
