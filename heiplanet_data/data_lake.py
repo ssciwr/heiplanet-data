@@ -228,7 +228,7 @@ def _find_existing_docs_by_var_request(
     source_dataset: str,
     request: Dict[str, Any],
     data_var: str,
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Find existing documents in the TinyDB database,
     based on the source dataset, data variable, and request dictionary.
 
@@ -248,7 +248,10 @@ def _find_existing_docs_by_var_request(
         data_var (str): Data variable in the request.
 
     Returns:
-        List[Dict[str, Any]]: List of documents that match the criteria.
+        Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]: A tuple containing:
+            - A list of documents that match the criteria.
+            - A list of missing requests that should be used to download the missing data,
+                each request follows CDS API format.
     """
     if data_var not in request.get("variable", []):
         raise ValueError(f"Data variable {data_var} not found in request variables.")
@@ -268,7 +271,8 @@ def _find_existing_docs_by_var_request(
     req_times = list(request.get("time", []))
     hash_value = _compute_hash_value(signature_var)
 
-    results = db.search(
+    # TODO: check data_format, download_format, and area as well?
+    filtered_docs = db.search(
         (query.hash == hash_value)
         & (
             (query.year == [])
@@ -285,7 +289,43 @@ def _find_existing_docs_by_var_request(
         )
     )
 
-    return results
+    # extract missing time points form filtered docs
+    existing_years = set()
+    existing_months = set()
+    existing_days = set()
+    existing_times = set()
+    missing_requests = []
+    for doc in filtered_docs:
+        existing_years.update(doc.get("year", []))
+        existing_months.update(doc.get("month", []))
+        existing_days.update(doc.get("day", []))
+        existing_times.update(doc.get("time", []))
+
+        missing_years = set(req_years) - existing_years
+        missing_months = set(req_months) - existing_months
+        missing_days = set(req_days) - existing_days
+        missing_times = set(req_times) - existing_times
+
+        # create missing request if one of the time points is missing
+        if missing_years or missing_months or missing_days or missing_times:
+            missing_request = request.copy()
+            missing_request["variable"] = [data_var]
+            # the below code is incorrect!
+            # if missing_times, then org years months days have to be repeated
+            # and for the missing years, months, days, the times will be org times and missing times.
+            # and so on...
+            if missing_years:
+                missing_request["year"] = sorted(missing_years)
+            if missing_months:
+                missing_request["month"] = sorted(missing_months)
+            if missing_days:
+                missing_request["day"] = sorted(missing_days)
+            if missing_times:
+                missing_request["time"] = sorted(missing_times)
+
+            missing_requests.append(missing_request)
+
+    return filtered_docs, missing_requests  # TODO: merge missing requests if possible
 
 
 def find_existing_docs_by_request(
