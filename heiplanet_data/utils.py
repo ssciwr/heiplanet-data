@@ -8,6 +8,7 @@ from datetime import datetime
 import socket
 from typing import Optional, List
 from datetime import timedelta
+from collections import defaultdict
 
 
 pkg = resources.files("heiplanet_data")
@@ -346,3 +347,63 @@ def extract_time_from_range(
             ]
 
     return years, months, days, hours, truncate_later
+
+
+def compress_time_points_to_ymdt(
+    time_points: List[Tuple[str, str, str, str]],
+) -> List[Dict[str, List[str]]]:
+    """Compress a list of time points (year, month, day, time) into a list of dictionaries,
+    each containing lists of years, months, days and hours as strings.
+    Months and days are formatted as two-digit strings.
+    Hours are formatted as "HH:MM" strings.
+
+    Args:
+        time_points (List[Tuple[str, str, str, str]]): List of time points,
+            each represented as a tuple of (year, month, day, time).
+
+    Returns:
+        List[Dict[str, List[str]]]: A list of dictionaries,
+            each containing lists of years, months, days and hours as strings.
+            Months and days are formatted as two-digit strings.
+            Hours are formatted as "HH:MM" strings.
+    """
+    results = []
+
+    # group by year, month, day to collect times
+    grouped = defaultdict(set)
+    for y, m, d, t in time_points:
+        grouped[(y, m, d)].add(t)
+
+    # reorganize by collapsing dimensions progressively
+    # group days that share identical times
+    ym_group = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
+    for (y, m, d), times in grouped.items():
+        ym_group[y][m][tuple(sorted(times))].add(d)
+
+    # group months that share identical day-time groups
+    y_group = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
+    for y, m_dict in ym_group.items():
+        for m, dt_dict in m_dict.items():
+            for dt_tuple, days in dt_dict.items():
+                y_group[y][tuple(sorted(days))][dt_tuple].add(m)
+
+    # group years that share identical month-day-time groups
+    final_group = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
+    for y, d_dict in y_group.items():
+        for d_tuple, dt_dict in d_dict.items():
+            for dt_tuple, months in dt_dict.items():
+                final_group[tuple(sorted(months))][d_tuple][dt_tuple].add(y)
+
+    # construct results
+    for m_tuple, d_dict in final_group.items():
+        for d_tuple, dt_dict in d_dict.items():
+            for dt_tuple, years in dt_dict.items():
+                item = {
+                    "year": sorted(years),
+                    "month": sorted(m_tuple),
+                    "day": sorted(d_tuple),
+                    "time": sorted(dt_tuple),
+                }
+                results.append(item)
+
+    return sorted(results, key=lambda x: (x["year"], x["month"], x["day"], x["time"]))

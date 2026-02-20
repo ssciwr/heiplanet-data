@@ -4,6 +4,8 @@ from pathlib import Path
 from heiplanet_data import utils
 from datetime import datetime
 from conftest import get_files
+from itertools import product
+import pandas as pd
 
 
 def test_is_non_empty_file(tmp_path):
@@ -550,3 +552,117 @@ def test_extract_time_from_range():
     )
     assert hours == ["00:00"]
     assert truncate is False
+
+
+def test_compress_time_points_to_ymdt_from_missingtps():
+    # full time points
+    full_y = [str(i) for i in range(2020, 2023)]
+    full_m = [str(i).zfill(2) for i in range(1, 5)]
+    full_d = [str(i).zfill(2) for i in range(1, 5)]
+    full_t = [f"{hour:02d}:00" for hour in range(0, 12)]
+    full_tps = set(product(full_y, full_m, full_d, full_t))
+
+    # exising time points
+    e_y = ["2020"]
+    e_m = ["01", "02"]
+    e_d = ["01", "02"]
+    e_t = ["00:00", "01:00"]
+    existing_tps = set(product(e_y, e_m, e_d, e_t))
+
+    # missing time points
+    missing_tps = full_tps - existing_tps
+
+    # compress time points
+    compressed = utils.compress_time_points_to_ymdt(missing_tps)
+
+    # check if the compressed time points are correct
+    assert len(compressed) == 4
+    y_compressed = compressed[3]
+    m_compressed = compressed[2]
+    d_compressed = compressed[1]
+    t_compressed = compressed[0]
+
+    assert y_compressed.get("year") == sorted(list(set(full_y) - set(e_y)))
+    assert y_compressed.get("month") == full_m
+    assert y_compressed.get("day") == full_d
+    assert y_compressed.get("time") == full_t
+
+    assert m_compressed.get("year") == e_y
+    assert m_compressed.get("month") == sorted(list(set(full_m) - set(e_m)))
+    assert m_compressed.get("day") == full_d
+    assert m_compressed.get("time") == full_t
+
+    assert d_compressed.get("year") == e_y
+    assert d_compressed.get("month") == e_m
+    assert d_compressed.get("day") == sorted(list(set(full_d) - set(e_d)))
+    assert d_compressed.get("time") == full_t
+
+    assert t_compressed.get("year") == e_y
+    assert t_compressed.get("month") == e_m
+    assert t_compressed.get("day") == e_d
+    assert t_compressed.get("time") == sorted(list(set(full_t) - set(e_t)))
+
+
+def test_compress_time_points_to_ymdt_complex_synthetic():
+    start_date = "2026-01-01"
+    end_date = "2027-09-05"
+
+    date_rng = pd.date_range(start=start_date, end=end_date, freq="h", inclusive="both")
+
+    full_tps = set()
+    for drng in date_rng:
+        time_tuples = [
+            f"{drng.year:04d}",
+            f"{drng.month:02d}",
+            f"{drng.day:02d}",
+            f"{drng.hour:02d}:00",
+        ]
+        full_tps.add(tuple(time_tuples))
+
+    compressed = utils.compress_time_points_to_ymdt(full_tps)
+
+    # TODO: assertment for this case is quite complicated
+    # the function even grouped month with same number of days,
+    # e.g. Jan, March, May, etc.
+    assert len(compressed) > 2  # 2016 and 2017
+
+
+def test_compress_time_points_to_ymdt_simple_synthetic():
+    start_date = "2025-01-01 00:00:00"
+    end_date = "2025-03-31 23:00:00"
+
+    date_rng = pd.date_range(start=start_date, end=end_date, freq="h", inclusive="both")
+
+    full_tps = set()
+    for drng in date_rng:
+        time_tuples = [
+            f"{drng.year:04d}",
+            f"{drng.month:02d}",
+            f"{drng.day:02d}",
+            f"{drng.hour:02d}:00",
+        ]
+        full_tps.add(tuple(time_tuples))
+
+    compressed = utils.compress_time_points_to_ymdt(full_tps)
+
+    assert len(compressed) == 2
+    assert compressed[0].get("year") == ["2025"]
+    assert compressed[0].get("month") == ["01", "03"]
+    assert compressed[0].get("day") == [str(i).zfill(2) for i in range(1, 32)]
+    assert compressed[0].get("time") == [f"{hour:02d}:00" for hour in range(24)]
+    assert compressed[1].get("year") == ["2025"]
+    assert compressed[1].get("month") == ["02"]
+    assert compressed[1].get("day") == [str(i).zfill(2) for i in range(1, 29)]
+    assert compressed[1].get("time") == [f"{hour:02d}:00" for hour in range(24)]
+
+
+def test_compress_time_points_to_ymdt_one_group():
+    full_tps = set(product(["2026"], ["01", "02"], ["01", "02"], ["00:00"]))
+
+    compressed = utils.compress_time_points_to_ymdt(full_tps)
+
+    assert len(compressed) == 1
+    assert compressed[0].get("year") == ["2026"]
+    assert compressed[0].get("month") == ["01", "02"]
+    assert compressed[0].get("day") == ["01", "02"]
+    assert compressed[0].get("time") == ["00:00"]

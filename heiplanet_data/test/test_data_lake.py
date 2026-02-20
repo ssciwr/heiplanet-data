@@ -211,6 +211,18 @@ def test_find_existing_docs_by_var_request_invalid(
             data_var="invalid_var",
         )
 
+    # None year
+    modified_request = request.copy()
+    modified_request["year"] = None
+    with pytest.raises(ValueError):
+        data_lake._find_existing_docs_by_var_request(
+            db=get_db_with_mock_data,
+            query=Query(),
+            source_dataset=ds_source,
+            request=modified_request,
+            data_var=request["variable"][0],
+        )
+
 
 def test_find_existing_docs_by_var_request_exact_match(
     get_db_with_mock_data, get_mock_data
@@ -219,7 +231,7 @@ def test_find_existing_docs_by_var_request_exact_match(
 
     for idx in range(len(signatures)):
         data_var = signatures[idx]["data_var"]
-        existing_docs = data_lake._find_existing_docs_by_var_request(
+        existing_docs, missing_requests = data_lake._find_existing_docs_by_var_request(
             db=get_db_with_mock_data,
             query=Query(),
             source_dataset=ds_source,
@@ -233,6 +245,8 @@ def test_find_existing_docs_by_var_request_exact_match(
             == get_db_with_mock_data.all()[idx]["file_path"]
         )
 
+        assert len(missing_requests) == 0
+
 
 def test_find_existing_docs_by_var_request_no_match(
     get_db_with_mock_data, get_mock_data
@@ -242,7 +256,7 @@ def test_find_existing_docs_by_var_request_no_match(
     # no match due to source dataset
     for signature in signatures:
         data_var = signature["data_var"]
-        existing_docs = data_lake._find_existing_docs_by_var_request(
+        existing_docs, missing_requests = data_lake._find_existing_docs_by_var_request(
             db=get_db_with_mock_data,
             query=Query(),
             source_dataset=ds_source + "_different",
@@ -250,13 +264,15 @@ def test_find_existing_docs_by_var_request_no_match(
             data_var=data_var,
         )
         assert len(existing_docs) == 0
+        assert len(missing_requests) == 1
+        assert missing_requests[0] == request
 
     # no match due to request
     modified_request = request.copy()
     modified_request["month"] = ["02"]  # different month
     for signature in signatures:
         data_var = signature["data_var"]
-        existing_docs = data_lake._find_existing_docs_by_var_request(
+        existing_docs, missing_requests = data_lake._find_existing_docs_by_var_request(
             db=get_db_with_mock_data,
             query=Query(),
             source_dataset=ds_source,
@@ -264,19 +280,22 @@ def test_find_existing_docs_by_var_request_no_match(
             data_var=data_var,
         )
         assert len(existing_docs) == 0
+        assert len(missing_requests) == 1
+        assert missing_requests[0] == modified_request
 
 
 def test_find_existing_docs_by_var_request_partial_match(
     get_db_with_mock_data, get_mock_data
 ):
     ds_source, request, signatures, _ = get_mock_data
+    full_days = [f"{day:02d}" for day in range(1, 32)]
 
     modified_request = request.copy()
     modified_request["year"] = ["2017", "2018"]  # overlap with original years
 
     for idx in range(len(signatures)):
         data_var = signatures[idx]["data_var"]
-        existing_docs = data_lake._find_existing_docs_by_var_request(
+        existing_docs, missing_requests = data_lake._find_existing_docs_by_var_request(
             db=get_db_with_mock_data,
             query=Query(),
             source_dataset=ds_source,
@@ -288,6 +307,12 @@ def test_find_existing_docs_by_var_request_partial_match(
             existing_docs[0]["file_path"]
             == get_db_with_mock_data.all()[idx]["file_path"]
         )
+
+        assert len(missing_requests) == 1
+        assert missing_requests[0]["year"] == ["2018"]  # the non-overlapping year
+        assert missing_requests[0]["month"] == request["month"]
+        assert missing_requests[0]["day"] == full_days
+        assert missing_requests[0]["time"] == request["time"]
 
 
 def test_find_existing_docs_by_var_request_full_ymdt(
@@ -303,7 +328,7 @@ def test_find_existing_docs_by_var_request_full_ymdt(
 
     for idx in range(len(signatures)):
         data_var = signatures[idx]["data_var"]
-        existing_docs = data_lake._find_existing_docs_by_var_request(
+        existing_docs, missing_requests = data_lake._find_existing_docs_by_var_request(
             db=get_db_with_mock_data,
             query=Query(),
             source_dataset=ds_source,
@@ -316,19 +341,22 @@ def test_find_existing_docs_by_var_request_full_ymdt(
             == get_db_with_mock_data.all()[idx]["file_path"]
         )
 
+        assert len(missing_requests) == 0
+
 
 def test_find_existing_docs_by_request_exact_match(
     get_db_with_mock_data, get_mock_data
 ):
     ds_source, request, signatures, _ = get_mock_data
 
-    filtered_docs = data_lake.find_existing_docs_by_request(
+    filtered_docs, missing_requests = data_lake.find_existing_docs_by_request(
         db_fpath=get_db_with_mock_data.storage._handle.name,
         source_dataset=ds_source,
         request=request,
     )
 
     assert len(filtered_docs) == 2
+    assert len(missing_requests) == 0
     for idx in range(len(signatures)):
         data_var = signatures[idx]["data_var"]
         matched_docs = filtered_docs[data_var]
@@ -343,25 +371,27 @@ def test_find_existing_docs_by_request_no_match(get_db_with_mock_data, get_mock_
     ds_source, request, _, _ = get_mock_data
 
     # no match due to source dataset
-    filtered_docs = data_lake.find_existing_docs_by_request(
+    filtered_docs, missing_requests = data_lake.find_existing_docs_by_request(
         db_fpath=get_db_with_mock_data.storage._handle.name,
         source_dataset=ds_source + "_different",
         request=request,
     )
 
     assert len(filtered_docs) == 0
+    assert len(missing_requests) == 2
 
     # no match due to request
     modified_request = request.copy()
     modified_request["month"] = ["02"]  # different month
 
-    filtered_docs = data_lake.find_existing_docs_by_request(
+    filtered_docs, missing_requests = data_lake.find_existing_docs_by_request(
         db_fpath=get_db_with_mock_data.storage._handle.name,
         source_dataset=ds_source,
         request=modified_request,
     )
 
     assert len(filtered_docs) == 0
+    assert len(missing_requests) == 2
 
 
 def test_find_existing_docs_by_request_partial_match(
@@ -372,7 +402,7 @@ def test_find_existing_docs_by_request_partial_match(
     modified_request = request.copy()
     modified_request["month"] = ["01", "02"]  # overlap with original months
 
-    filtered_docs = data_lake.find_existing_docs_by_request(
+    filtered_docs, missing_requests = data_lake.find_existing_docs_by_request(
         db_fpath=get_db_with_mock_data.storage._handle.name,
         source_dataset=ds_source,
         request=modified_request,
@@ -387,6 +417,10 @@ def test_find_existing_docs_by_request_partial_match(
             matched_docs[0]["file_path"]
             == get_db_with_mock_data.all()[idx]["file_path"]
         )
+        assert len(missing_requests[data_var]) == 1
+        assert missing_requests[data_var][0]["month"] == [
+            "02"
+        ]  # the non-overlapping month
 
 
 def test_find_existing_docs_by_request_full_ymdt(get_db_with_mock_data, get_mock_data):
@@ -395,13 +429,14 @@ def test_find_existing_docs_by_request_full_ymdt(get_db_with_mock_data, get_mock
     modified_request = request.copy()
     modified_request["day"] = ["21", "25"]  # all days in Jan are covered
 
-    filtered_docs = data_lake.find_existing_docs_by_request(
+    filtered_docs, missing_requests = data_lake.find_existing_docs_by_request(
         db_fpath=get_db_with_mock_data.storage._handle.name,
         source_dataset=ds_source,
         request=modified_request,
     )
 
     assert len(filtered_docs) == 2
+    assert len(missing_requests) == 0
     for idx in range(len(signatures)):
         data_var = signatures[idx]["data_var"]
         matched_docs = filtered_docs[data_var]
@@ -493,6 +528,8 @@ def test_find_existing_docs_by_var_time_partial_match(
     get_db_with_mock_data, get_mock_data
 ):
     ds_source, request, signatures, _ = get_mock_data
+    full_months = [f"{month:02d}" for month in range(1, 13)]
+    full_days = [f"{day:02d}" for day in range(1, 32)]
 
     product_type = request["product_type"][0]
 
@@ -508,4 +545,19 @@ def test_find_existing_docs_by_var_time_partial_match(
             end_time="2018-12-31",
         )
         assert len(results) == 1
-        # TODO: check missing requests
+        assert len(missing_requests) == 2
+        assert missing_requests[0]["variable"] == [data_var]
+        assert missing_requests[0]["year"] == ["2017"]
+        assert missing_requests[0]["month"] == list(
+            sorted(set(full_months) - set(request["month"]))
+        )
+        assert missing_requests[0]["day"] == full_days
+        assert missing_requests[0]["time"] == ["00:00"]
+
+        assert missing_requests[1]["variable"] == [data_var]
+        assert missing_requests[1]["year"] == ["2018"]
+        assert missing_requests[1]["month"] == full_months
+        assert missing_requests[1]["day"] == full_days
+        assert missing_requests[1]["time"] == [
+            "00:00"
+        ]  # TODO: recheck the utils.extract_time_from_range for this

@@ -111,6 +111,8 @@ def download_data_by_var_time(
         # create the directory if it doesn't exist
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
+    # TODO: should split range into smaller ranges first?
+
     # get data for CDS request
     years, months, days, hours, truncate_later = utils.extract_time_from_range(
         start_time, end_time
@@ -708,6 +710,7 @@ def extract_data_by_var_time(
             and the path to the file where the dataset is saved.
     """
     # find exsisting documents that match the query
+    # TODO: modify this with missing_requests
     candidate_docs, missing_ranges = data_lake.find_existing_docs_by_var_time(
         db,
         query,
