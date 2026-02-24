@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime
 
 
-def test_download_data_invalid():
+def test_download_data_invalid(tmp_path):
     # empty output file path
     with pytest.raises(ValueError):
         inout.download_data(None, "test_dataset", {"param": "value"})
@@ -26,6 +26,14 @@ def test_download_data_invalid():
     with pytest.raises(ValueError):
         inout.download_data("test_output.nc", "test_dataset", "invalid_request")
 
+    # existing file without overwrite option
+    output_file = tmp_path / "test_output.nc"
+    output_file.touch()
+    with pytest.raises(FileExistsError):
+        inout.download_data(
+            output_file, "test_dataset", {"param": "value"}, overwrite=False
+        )
+
 
 def test_download_data_valid(tmp_path):
     output_file = tmp_path / "test" / "test_output.nc"
@@ -40,10 +48,39 @@ def test_download_data_valid(tmp_path):
         "download_format": "unarchived",
         "area": [0, -1, 0, 1],  # [N, W, S, E]
     }
-    inout.download_data(output_file, dataset, request)
+    inout.download_data(output_file, dataset, request, overwrite=False)
     assert output_file.exists()
     assert output_file.parent.exists()
     # Clean up
+    output_file.unlink()
+
+
+def test_download_data_overwrite(tmp_path):
+    # create an existing .nc file
+    output_file = tmp_path / "test_output.nc"
+    existing_ds = xr.Dataset(attrs={"test-info": "for testing overwrite"})
+    existing_ds.to_netcdf(output_file)
+
+    # download data with overwrite=True
+    dataset = "reanalysis-era5-land-monthly-means"
+    request = {
+        "product_type": ["monthly_averaged_reanalysis"],
+        "variable": ["2m_temperature"],
+        "year": ["2025"],
+        "month": ["03"],
+        "time": ["00:00"],
+        "data_format": "netcdf",
+        "download_format": "unarchived",
+        "area": [0, -1, 0, 1],  # [N, W, S, E]
+    }
+    inout.download_data(output_file, dataset, request, overwrite=True)
+    assert output_file.exists()
+
+    # verify that the content has been overwritten
+    with xr.open_dataset(output_file) as ds:
+        assert "test-info" not in ds.attrs
+
+    # clean up
     output_file.unlink()
 
 
@@ -234,8 +271,8 @@ def test_truncate_string():
     assert inout._truncate_string(string, max_length) == "a" * 100
 
 
-def test_get_filename_var():
-    file_name = inout.get_filename(
+def test_suggest_filename_var():
+    file_name = inout.suggest_filename(
         "reanalysis-era5-land-monthly-means",
         "netcdf",
         ["2025"],
@@ -248,7 +285,7 @@ def test_get_filename_var():
     )
     assert file_name == "era5_data_2025_01-02_2t_monthly_area_raw.nc"
 
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         "reanalysis-era5-land-monthly-means",
         "netcdf",
         ["2025"],
@@ -274,7 +311,7 @@ def test_get_filename_var():
     )
     assert file_name == "era5_data_2025_allm_2t_monthly_area_raw.nc"
 
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         "reanalysis-era5-land",
         "netcdf",
         ["2025"],
@@ -287,7 +324,7 @@ def test_get_filename_var():
     )
     assert file_name == "era5_data_2025_01_2t_area_raw.nc"
 
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         "reanalysis-era5-land",
         "netcdf",
         ["2025"],
@@ -300,7 +337,7 @@ def test_get_filename_var():
     )
     assert file_name == "era5_data_2025_01-02_2t_raw.nc"
 
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         "reanalysis-era5-land",
         "grib",
         ["2025"],
@@ -314,8 +351,8 @@ def test_get_filename_var():
     assert file_name == "era5_data_2025_01-02_2t_area_raw.grib"
 
 
-def test_get_filename_vars():
-    file_name = inout.get_filename(
+def test_suggest_filename_vars():
+    file_name = inout.suggest_filename(
         "reanalysis-era5-land-monthly-means",
         "netcdf",
         ["2025"],
@@ -329,7 +366,7 @@ def test_get_filename_vars():
     assert file_name == "era5_data_2025_01-02_2t_tp_monthly_area_raw.nc"
 
 
-def test_get_filename_long():
+def test_suggest_filename_long():
     # long vars
     var_names = [
         "2m_temperature",
@@ -344,7 +381,7 @@ def test_get_filename_long():
         "high_cloud_cover",
     ]
 
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         "reanalysis-era5-land-monthly-means",
         "netcdf",
         ["2025"],
@@ -359,7 +396,7 @@ def test_get_filename_long():
 
     # long years and long vars
     years = [str(i) for i in range(1900, 2030)]
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         "reanalysis-era5-land-monthly-means",
         "netcdf",
         years,
@@ -373,7 +410,7 @@ def test_get_filename_long():
     assert file_name == "era5_data_1900-2029_01-02_2t_etc_monthly_area_raw.nc"
 
     # non-continuous years and long vars
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         "reanalysis-era5-land-monthly-means",
         "netcdf",
         ["2020", "2023", "2021"],
@@ -388,7 +425,7 @@ def test_get_filename_long():
 
     # non-continuous years with more than 5 years
     years = [str(i) for i in range(2020, 2040, 2)]
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         "reanalysis-era5-land-monthly-means",
         "netcdf",
         years,
@@ -406,7 +443,7 @@ def test_get_filename_long():
 
     # more than 100 chars
     years = [str(i) for i in range(1900, 2030)]
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         "reanalysis-era5-land-monthly-means",
         "netcdf",
         years,
@@ -424,8 +461,8 @@ def test_get_filename_long():
     )
 
 
-def test_get_filename_none_cases():
-    file_name = inout.get_filename(
+def test_suggest_filename_none_cases():
+    file_name = inout.suggest_filename(
         ds_name="reanalysis-era5-land-monthly-means",
         data_format="netcdf",
         years=None,
@@ -439,8 +476,8 @@ def test_get_filename_none_cases():
     assert file_name == "era5_data_2t_monthly_raw.nc"
 
 
-def test_get_filename_days_times_dstype():
-    file_name = inout.get_filename(
+def test_suggest_filename_days_times_dstype():
+    file_name = inout.suggest_filename(
         ds_name="reanalysis-era5-land",
         data_format="netcdf",
         years=["2025"],
@@ -453,7 +490,7 @@ def test_get_filename_days_times_dstype():
     )
     assert file_name == "era5_data_2025_01_alld_allt_2t_raw.nc"
 
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         ds_name="reanalysis-era5-land",
         data_format="netcdf",
         years=["2025"],
@@ -466,7 +503,7 @@ def test_get_filename_days_times_dstype():
     )
     assert file_name == "era5_data_2025_01_01-10_00-10_2t_raw.nc"
 
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         ds_name="reanalysis-era5-land",
         data_format="netcdf",
         years=["2025"],
@@ -479,7 +516,7 @@ def test_get_filename_days_times_dstype():
     )
     assert file_name == "era5_data_2025_01_01_05_00_02_2t_raw.nc"
 
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         ds_name="reanalysis-era5-land",
         data_format="netcdf",
         years=["2025"],
@@ -494,7 +531,7 @@ def test_get_filename_days_times_dstype():
         file_name == "era5_data_2025_01_01_05_10_15_20_etc_00_02_04_06_08_etc_2t_raw.nc"
     )
 
-    file_name = inout.get_filename(
+    file_name = inout.suggest_filename(
         ds_name="reanalysis-era5-land",
         data_format="netcdf",
         years=["2025"],
