@@ -15,7 +15,7 @@ The [CDS's ERA5-Land monthly](https://cds.climate.copernicus.eu/datasets/reanaly
 For the latter option, please set up the CDS API as outlined below and take note of the naming convention used for the downloaded files.
 
 ### Set up CDS API
-To use  [CDS](https://cds.climate.copernicus.eu/) API for downloading data, you need to first create an account on CDS to obtain your personal access token.
+To use [CDS](https://cds.climate.copernicus.eu/) API for downloading data, you need to first create an account on CDS to obtain your personal access token.
 
 Create a `.cdsapirc` file containing your personal access token by following [this instruction](https://cds.climate.copernicus.eu/how-to-api).
 
