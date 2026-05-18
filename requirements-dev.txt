@@ -1,7 +1,7 @@
 pre-commit
 pytest
 mkdocs-material==9.7.6
-mkdocs-include-markdown-plugin==7.2.1
+mkdocs-include-markdown-plugin==7.3.0
 mkdocs-glightbox==0.5.2
 mkdocstrings-python==2.0.3
 mkdocs-jupyter==0.25.1
