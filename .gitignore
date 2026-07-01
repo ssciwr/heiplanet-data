@@ -212,4 +212,4 @@ __marimo__/
 # data files
 data/in/*
 data/out/*
-data/processed/*
+data/processed/*.DS_Store
