@@ -30,6 +30,7 @@ jobs:
           conda activate test_env
           conda install -y -c conda-forge esmf esmpy
           conda install -y -c conda-forge python-cdo
+          conda install -y -c conda-forge pip
         shell: bash -l {0}
 
       - name: Install dependencies and package
