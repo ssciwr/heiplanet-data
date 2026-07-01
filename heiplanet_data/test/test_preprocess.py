@@ -2297,3 +2297,26 @@ def test_apply_preprocessing_wind_height_unchanged():
     # check if data is unchanged
     assert "height" in preprocessed_dataset["u10"].dims
     assert np.array_equal(preprocessed_dataset["u10"].values, org_data)
+
+    # no preprocessing step should touch the "height" coordinate
+    settings = {
+        "unify_coords": True,
+        "uni_coords": {
+            "latitude": "latitude",
+            "longitude": "longitude",
+            "height": "new_height",
+        },
+        "adjust_longitude": False,
+        "convert_kelvin_to_celsius": False,
+        "convert_m_to_mm_precipitation": False,
+        "resample_grid": False,
+        "truncate_date": False,
+        "cal_monthly_tp": False,
+    }
+    preprocessed_dataset, _ = preprocess._apply_preprocessing(
+        dataset, "test_wind", settings=settings
+    )
+
+    # check if height is unchanged
+    assert "new_height" in preprocessed_dataset.coords
+    assert np.array_equal(preprocessed_dataset["new_height"].values, org_height)
