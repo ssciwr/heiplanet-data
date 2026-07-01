@@ -1,0 +1,47 @@
+name: CI Check
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+jobs:
+  clean-and-test:
+    runs-on: ubuntu-latest
+    python-version: ["3.13"]
+    steps:
+      - name: Getting repository
+        uses: actions/checkout@v7
+
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@835234971496cad1653abb28a638a281cf32541f
+        with:
+          auto-activate-base: false
+          channels: conda-forge
+          channel-priority: strict
+
+      - name: Install dependencies (with conda, for xesmf)
+        run: |
+          conda create -n test_env python=${{ matrix.python-version }} -y
+          conda init bash
+          source ~/.bashrc
+          conda activate test_env
+          conda install -y -c conda-forge esmf esmpy
+          conda install -y -c conda-forge python-cdo
+        shell: bash -l {0}
+
+      - name: Install dependencies and package
+        run: |
+          conda run -n test_env python -m pip install uv
+          conda run -n test_env python -m uv pip install -e .[dev]
+
+      - name: Create .cdsapirc file
+        run: |
+          echo "url: https://cds.climate.copernicus.eu/api" >> ~/.cdsapirc
+          echo "key: ${{ secrets.CDSAPI_KEY }}" >> ~/.cdsapirc
+
+      - name: Execute integration tests
+        env: 
+          HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+        run: |
+          conda run -n test_env python -m pytest -svv -m "integration"
