@@ -7,13 +7,17 @@ from heiplanet_data import preprocess
 from dask.diagnostics.progress import ProgressBar
 
 
-def download_data(output_file: Path, dataset: str, request: Dict[str, Any]):
+def download_data(
+    output_file: Path, dataset: str, request: Dict[str, Any], overwrite: bool = False
+):
     """Download data from Copernicus's CDS using the cdsapi.
 
     Args:
         output_file (Path): The path to the output file where data will be saved.
         dataset (str): The name of the dataset to download.
         request (Dict[str, Any]): A dictionary containing the request parameters.
+        overwrite (bool): Whether to overwrite the output file if it already exists.
+            Default is False.
     """
     if not output_file:
         raise ValueError("Output file path must be provided.")
@@ -24,7 +28,12 @@ def download_data(output_file: Path, dataset: str, request: Dict[str, Any]):
     if not request or not isinstance(request, dict):
         raise ValueError("Request information must be a dictionary.")
 
-    if not output_file.exists():
+    if output_file.exists() and not overwrite:
+        raise FileExistsError(
+            f"Output file {output_file} already exists. Set overwrite=True to overwrite."
+        )
+
+    if not output_file.parent.exists():
         # create the directory if it doesn't exist
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -248,7 +257,7 @@ def _truncate_string(s: str, max_length: int = 100) -> str:
     return s if len(s) <= max_length else s[:max_length] + "_etc"
 
 
-def get_filename(
+def suggest_filename(
     ds_name: str,
     data_format: str,
     years: List[str] | None,
@@ -256,10 +265,13 @@ def get_filename(
     days: List[str] | None = None,
     times: List[str] | None = None,
     has_area: bool = False,
-    base_name: str = "era5_data",
+    base_name: str = "era5_land_data",
     variables: List[str] = ["2m_temperature"],
 ) -> str:
-    """Get file name based on dataset name, base name, years, months and area.
+    """Suggest a filename that contains key metadata about the dataset.
+    The format is:
+    {base_name}_{year_str}_{month_str}_{day_str}_{time_str}_
+        {var_str}_{ds_type}_{area_str}_raw.{ext}
 
     Args:
         ds_name (str): Dataset name.
@@ -270,7 +282,7 @@ def get_filename(
         times (List[str] | None): List of times.
         has_area (bool): Flag indicating if area is included.
         base_name (str): Base name for the file.
-            Default is "era5_data".
+            Default is "era5_land_data".
         variables (List[str]): List of variables.
             Default is ["2m_temperature"].
 
@@ -509,7 +521,7 @@ def download_total_precipitation_from_hourly_era5_land(
     end_date: str,
     area: List[float] | None = None,
     out_dir: Path = Path("."),
-    base_name: str = "era5_data",
+    base_name: str = "era5_land_data",
     data_format: str = "netcdf",
     ds_name: str = "reanalysis-era5-land",
     coord_name: str = "valid_time",
@@ -530,7 +542,7 @@ def download_total_precipitation_from_hourly_era5_land(
         out_dir (Path): Output directory to save the downloaded file.
             Default is current directory.
         base_name (str): Base name for the file.
-            Default is "era5_data".
+            Default is "era5_land_data".
         data_format (str): Data format (e.g., "netcdf", "grib").
             Default is "netcdf".
         ds_name (str): Dataset name.

@@ -12,7 +12,12 @@ import tempfile
 import textwrap
 from cdo import Cdo
 from dataclasses import dataclass
+import logging
+import exactextract as ee
+from functools import reduce
 
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=Union[np.float64, xr.DataArray])
 warn_positive_resolution = "New resolution must be a positive number."
@@ -105,7 +110,7 @@ def convert_to_celsius(temperature_kelvin: T) -> T:
 
 def convert_to_celsius_with_attributes(
     dataset: xr.Dataset,
-    inplace: bool = False,
+    inplace: bool = True,
     var_name: str = "t2m",
 ) -> xr.Dataset:
     """Convert temperature from Kelvin to Celsius and keep attributes.
@@ -113,7 +118,7 @@ def convert_to_celsius_with_attributes(
     Args:
         dataset (xr.Dataset): Dataset containing temperature in Kelvin.
         inplace (bool): If True, modify the original dataset.
-            If False, return a new dataset. Default is False.
+            If False, return a new dataset. Default is True.
         var_name (str): Name of the temperature variable in the dataset.
             Default is "t2m".
 
@@ -191,14 +196,14 @@ def convert_m_to_mm(precipitation: T) -> T:
 
 
 def convert_m_to_mm_with_attributes(
-    dataset: xr.Dataset, inplace: bool = False, var_name: str = "tp"
+    dataset: xr.Dataset, inplace: bool = True, var_name: str = "tp"
 ) -> xr.Dataset:
     """Convert precipitation from meters to millimeters and keep attributes.
 
     Args:
         dataset (xr.Dataset): Dataset containing precipitation in meters.
         inplace (bool): If True, modify the original dataset.
-            If False, return a new dataset. Default is False.
+            If False, return a new dataset. Default is True.
         var_name (str): Name of the precipitation variable in the dataset.
             Default is "tp".
 
@@ -812,7 +817,7 @@ class ResolutionConfig:
         lon_name (str): Name of the longitude coordinate. Default is "longitude".
         downsample_lib (Literal["xarray", "xesmf", "cdo"]): Library to use for downsampling.
             Options are "xarray", "xesmf", or "cdo". Default is "xesmf".
-        agg_funcs (Dict[str, str] | None): Aggregation functions for each variable.
+        downsample_agg_funcs (Dict[str, str] | None): Aggregation function for each variable.
             If None, default aggregation of corresponding library is used. Default is None.
         upsample_method_map (Dict[str, str] | None): Mapping of variable names to
             interpolation methods. If None, linear interpolation is used. Default is None.
@@ -822,7 +827,7 @@ class ResolutionConfig:
     lat_name: str = "latitude"
     lon_name: str = "longitude"
     downsample_lib: Literal["xarray", "xesmf", "cdo"] = "xesmf"
-    agg_funcs: Dict[str, str] | None = None
+    downsample_agg_funcs: Dict[str, str] | None = None
     upsample_method_map: Dict[str, str] | None = None
 
 
@@ -881,7 +886,7 @@ def resample_resolution(
     lat_name = resolution_config.lat_name
     lon_name = resolution_config.lon_name
     downsample_lib = resolution_config.downsample_lib
-    agg_funcs = resolution_config.agg_funcs
+    downsample_agg_funcs = resolution_config.downsample_agg_funcs
     upsample_method_map = resolution_config.upsample_method_map
 
     expected_longitude_max = grid_config.expected_longitude_max_xarray
@@ -910,7 +915,7 @@ def resample_resolution(
                 new_resolution=new_resolution,
                 lat_name=lat_name,
                 lon_name=lon_name,
-                agg_funcs=agg_funcs,
+                agg_funcs=downsample_agg_funcs,
             )
             return align_lon_lat_with_popu_data(
                 dataset,
@@ -928,7 +933,7 @@ def resample_resolution(
                 new_max_lon=new_max_lon,
                 lat_name=lat_name,
                 lon_name=lon_name,
-                agg_funcs=agg_funcs,
+                agg_funcs=downsample_agg_funcs,
             )
         elif downsample_lib == "cdo":
             return downsample_resolution_with_cdo(
@@ -940,7 +945,7 @@ def resample_resolution(
                 new_lon_size=new_lon_size,
                 lat_name=lat_name,
                 lon_name=lon_name,
-                agg_funcs=agg_funcs,
+                agg_funcs=downsample_agg_funcs,
                 gridtype=gridtype,
             )
         else:
@@ -1057,6 +1062,62 @@ def truncate_data_by_time(
     return dataset.sel({var_name: slice(start_date, end_date)})
 
 
+def _check_month_start_data(times: xr.DataArray) -> bool:
+    """Check if all time points are at the start of the month.
+    E.g. 2016-01-01, 2016-02-01, ..., 2017-01-01, 2018-01-01 ...
+
+    Args:
+        times (xr.DataArray): Time coordinate to check.
+
+    Returns:
+        bool: True if all time points are at the start of the month, False otherwise.
+    """
+    days = times.dt.day.values
+
+    # check if all days are 1
+    if not np.all(days == 1):
+        return False
+
+    return True
+
+
+def calculate_monthly_precipitation(
+    dataset: xr.Dataset, var_name: str = "tp", time_coord: str = "time"
+) -> xr.Dataset:
+    """Calculate monthly total precipitation from data downloaded from ERA5-Land monthly data.
+    The real precipitation of the month = downloaded value * number of days in the month.
+
+    Args:
+        dataset (xr.Dataset): Dataset with total precipitation data.
+        var_name (str): Name of the precipitation variable in the dataset. Default is "tp".
+        time_coord (str): Name of the time coordinate in the dataset. Default is "time".
+
+    Returns:
+        xr.Dataset: Dataset with monthly total precipitation values.
+    """
+    # check inputs
+    if time_coord not in dataset.coords:
+        raise ValueError(f"Time coordinate '{time_coord}' not found in dataset.")
+
+    if var_name not in dataset.data_vars:
+        raise ValueError(f"Variable '{var_name}' not found in dataset.")
+
+    times = dataset[time_coord]
+
+    if not _check_month_start_data(times):
+        raise ValueError("The dataset does not have month start data.")
+
+    # calculate number of days in each month
+    days_in_month = times.dt.days_in_month
+
+    # calculate monthly total precipitation
+    org_attrs = dataset[var_name].attrs.copy()
+    dataset[var_name] = dataset[var_name] * days_in_month
+    dataset[var_name].attrs = org_attrs
+
+    return dataset
+
+
 def _replace_decimal_point(degree: float) -> str:
     """Replace the decimal point in a degree string with 'p'
     if the degree is greater than or equal to 1.0,
@@ -1114,12 +1175,11 @@ def _apply_preprocessing(
 
     resample_grid = settings.get("resample_grid", False)
     resample_grid_vname = settings.get("resample_grid_vname")
-    lat_name = resample_grid_vname[0] if resample_grid_vname else None
-    lon_name = resample_grid_vname[1] if resample_grid_vname else None
+    lat_name, lon_name = resample_grid_vname if resample_grid_vname else (None, None)
     resample_grid_fname = settings.get("resample_grid_fname")
     resample_degree = settings.get("resample_degree")
-    resample_agg_funcs = settings.get("resample_agg_funcs", None)
-    resample_upsample_method_map = settings.get("resample_upsample_method_map", None)
+    downsample_agg_funcs = settings.get("downsample_agg_funcs", None)
+    upsample_method_map = settings.get("upsample_method_map", None)
     resample_expected_longitude_max = settings.get(
         "downsample_max_lon_xarray", np.float64(179.75)
     )
@@ -1137,40 +1197,102 @@ def _apply_preprocessing(
     truncate_date_to = settings.get("truncate_date_to")
     truncate_date_vname = settings.get("truncate_date_vname")
 
-    if unify_coords:
-        print("Renaming coordinates to unify them across datasets...")
-        dataset = rename_coords(dataset, uni_coords)
-        file_name_base += f"_{unify_coords_fname}"
+    cal_monthly_tp = settings.get("cal_monthly_tp", False)
+    cal_monthly_tp_vname = settings.get("cal_monthly_tp_vname")
+    cal_monthly_tp_tcoord = settings.get("cal_monthly_tp_tcoord")
+    cal_monthly_tp_fname = settings.get("cal_monthly_tp_fname")
 
-    if adjust_longitude and adjust_longitude_vname in dataset.coords:
-        print("Adjusting longitude from 0-360 to -180-180...")
-        dataset = adjust_longitude_360_to_180(
-            dataset, lon_name=adjust_longitude_vname
-        )  # only consider full map for now, i.e. limited_area=False
-        file_name_base += f"_{adjust_longitude_fname}"
+    # define helper function
+    def apply_step(
+        ds: xr.Dataset,
+        fname_base: str,
+        step: Dict[str, Any],
+        logger: logging.Logger,
+    ) -> Tuple[xr.Dataset, str]:
+        """Apply a preprocessing step to the dataset and update the file name."""
+        if not step["condition"](ds):
+            return ds, fname_base
 
-    if (
-        convert_kelvin_to_celsius
-        and convert_kelvin_to_celsius_vname in dataset.data_vars
-    ):
-        print("Converting temperature from Kelvin to Celsius...")
-        dataset = convert_to_celsius_with_attributes(
-            dataset, var_name=convert_kelvin_to_celsius_vname
-        )
-        file_name_base += f"_{convert_kelvin_to_celsius_fname}"
+        logger.info(step["message"])
+        ds = step["transform"](ds)
 
-    if (
-        convert_m_to_mm_precipitation
-        and convert_m_to_mm_precipitation_vname in dataset.data_vars
-    ):
-        print("Converting precipitation from meters to millimeters...")
-        dataset = convert_m_to_mm_with_attributes(
-            dataset, var_name=convert_m_to_mm_precipitation_vname
-        )
-        file_name_base += f"_{convert_m_to_mm_precipitation_fname}"
+        suffix = step.get("suffix")
 
-    if resample_grid and lat_name in dataset.coords and lon_name in dataset.coords:
-        print("Resampling grid to a new resolution...")
+        if suffix:
+            fname_base += f"_{suffix}"
+
+        return ds, fname_base
+
+    # define steps with common structure
+    pp_common_steps = [
+        {
+            "condition": lambda ds: unify_coords,
+            "message": "Renaming coordinates to unify them across datasets...",
+            "transform": lambda ds: rename_coords(ds, uni_coords),
+            "suffix": unify_coords_fname,
+        },
+        {
+            "condition": lambda ds: (
+                adjust_longitude and adjust_longitude_vname in ds.coords
+            ),
+            "message": "Adjusting longitude from 0-360 to -180-180...",
+            "transform": lambda ds: adjust_longitude_360_to_180(
+                ds, lon_name=adjust_longitude_vname
+            ),  # only consider full map for now, i.e. limited_area=False
+            "suffix": adjust_longitude_fname,
+        },
+        {
+            "condition": lambda ds: (
+                convert_kelvin_to_celsius
+                and convert_kelvin_to_celsius_vname in ds.data_vars
+            ),
+            "message": "Converting temperature from Kelvin to Celsius...",
+            "transform": lambda ds: convert_to_celsius_with_attributes(
+                ds, var_name=convert_kelvin_to_celsius_vname
+            ),
+            "suffix": convert_kelvin_to_celsius_fname,
+        },
+        {
+            "condition": lambda ds: (
+                convert_m_to_mm_precipitation
+                and convert_m_to_mm_precipitation_vname in ds.data_vars
+            ),
+            "message": "Converting precipitation from meters to millimeters...",
+            "transform": lambda ds: convert_m_to_mm_with_attributes(
+                ds, var_name=convert_m_to_mm_precipitation_vname
+            ),
+            "suffix": convert_m_to_mm_precipitation_fname,
+        },
+        {
+            "condition": lambda ds: (
+                cal_monthly_tp
+                and all(
+                    (
+                        cal_monthly_tp_vname in ds.data_vars,
+                        cal_monthly_tp_tcoord in ds.coords,
+                    )
+                )
+            ),
+            "message": (
+                "Calculating monthly total precipitation = "
+                "downloaded data * number of days in month..."
+            ),
+            "transform": lambda ds: calculate_monthly_precipitation(
+                ds,
+                var_name=cal_monthly_tp_vname,
+                time_coord=cal_monthly_tp_tcoord,
+            ),
+            "suffix": cal_monthly_tp_fname,
+        },
+    ]
+
+    # apply common steps
+    for step in pp_common_steps:
+        dataset, file_name_base = apply_step(dataset, file_name_base, step, logger)
+
+    # handle complex steps separately
+    if resample_grid and all((lat_name in dataset.coords, lon_name in dataset.coords)):
+        logger.info("Resampling grid to a new resolution...")
         dataset = resample_resolution(
             dataset,
             resolution_config=ResolutionConfig(
@@ -1178,8 +1300,8 @@ def _apply_preprocessing(
                 lat_name=lat_name,
                 lon_name=lon_name,
                 downsample_lib=downsample_lib,
-                agg_funcs=resample_agg_funcs,
-                upsample_method_map=resample_upsample_method_map,
+                downsample_agg_funcs=downsample_agg_funcs,
+                upsample_method_map=upsample_method_map,
             ),
             grid_config=GridConfig(
                 expected_longitude_max_xarray=resample_expected_longitude_max,
@@ -1196,7 +1318,7 @@ def _apply_preprocessing(
         file_name_base += f"_{degree_str}{resample_grid_fname}"
 
     if truncate_date and truncate_date_vname in dataset.coords:
-        print("Truncating data from a specific start date...")
+        logger.info("Truncating data from a specific start date...")
         dataset = truncate_data_by_time(
             dataset,
             start_date=truncate_date_from,
@@ -1206,9 +1328,8 @@ def _apply_preprocessing(
 
         min_year = truncate_date_from[:4]
         max_time = dataset[truncate_date_vname].max().values
-        max_year = (
-            truncate_date_to[:4] if truncate_date_to else np.datetime64(max_time, "Y")
-        )
+        end_date = truncate_date_to or max_time
+        max_year = np.datetime64(end_date, "Y")
         file_name_base += f"_{min_year}-{max_year}"
 
     return dataset, file_name_base
@@ -1270,38 +1391,94 @@ def preprocess_data_file(
         # save the processed dataset
         output_file = folder_path / f"{file_name_base}_{unique_tag}{file_ext}"
         dataset.to_netcdf(output_file, mode="w", format="NETCDF4")
-        print(f"Processed dataset saved to: {output_file}")
+        logger.info(f"Processed dataset saved to: {output_file}")
         return dataset, str(output_file.name)
 
 
-def _aggregate_netcdf_nuts(
+def _prepare_for_aggregation(
+    dataset: xr.Dataset,
+    normalize_time: bool = True,
+    agg_dict: Dict[str, str] | None = None,
+) -> Tuple[xr.Dataset, Dict[str, str]]:
+    """
+    Prepare the dataset for aggregation by:
+        * normalizing time if needed,
+        * preparing aggregation dictionary.
+
+    Args:
+        dataset (xr.Dataset): Dataset to prepare.
+        normalize_time (bool): If True, normalize time to the beginning of the day.
+            e.g. 2025-10-01T12:00:00 becomes 2025-10-01T00:00:00.
+            Default is True.
+        agg_dict (Dict[str, str] | None): Dictionary of aggregation functions for each variable.
+            If None, default aggregation (i.e. mean) is used.
+
+    Returns:
+        Tuple[xr.Dataset, Dict[str, str]]: First item is the prepared dataset,
+            with time is normalized if specified.
+            The second item is the aggregation dictionary.
+    """
+    # normalize time if specified
+    if normalize_time:
+        dataset["time"] = dataset["time"].dt.floor("D")
+
+    # prepare aggregation dictionary
+    # get list of data variable names
+    var_names = list(dataset.data_vars.keys())
+
+    invalid_agg_dict = agg_dict is not None and (
+        not isinstance(agg_dict, dict)
+        or not all(
+            isinstance(var, str) and isinstance(func, str)
+            for var, func in agg_dict.items()
+        )
+        or (isinstance(agg_dict, dict) and len(agg_dict) == 0)
+        or not all(var in var_names for var in agg_dict.keys())
+    )
+    if invalid_agg_dict or agg_dict is None:
+        if invalid_agg_dict:
+            warnings.warn(
+                "Invalid agg_dict provided. Using default aggregation (mean) for all variables.",
+                UserWarning,
+            )
+        # default aggregation is mean for each variable
+        agg_dict = dict.fromkeys(var_names, "mean")
+
+    return dataset, agg_dict
+
+
+def _aggregate_netcdf_nuts_gpd(
     nuts_data: gpd.GeoDataFrame,
     nc_file: Path,
-    agg_dict: dict | None,
+    agg_dict: Dict[str, str] | None,
     normalize_time: bool = True,
-) -> Tuple[gpd.GeoDataFrame, list[str]]:
+) -> Tuple[pd.DataFrame, list[str]]:
     """
-    Aggregate NetCDF data by NUTS regions.
-    Left join is used to ensure that all NUTS regions are included,
-    even if some regions do not have data in the NetCDF file.
+    Aggregate NetCDF data by NUTS regions using GeoPandas (i.e. `sjoin`).
+
+    Notes:
+        * `sjoin` does not consider weights based on area overlap.
+        * It is not recommended for very large datasets as it may consume a lot of memory,
+            e.g. global datasets with fine resolution (0.1 deg)
+            and long time series (24 months).
 
     Args:
         nuts_data (gpd.GeoDataFrame): GeoDataFrame containing NUTS data from shape file.
         nc_file (Path): Path to the NetCDF file.
-        agg_dict (dict | None): Dictionary of aggregation functions for each variable.
+        agg_dict (Dict[str, str] | None): Dictionary of aggregation functions for each variable.
             If None, default aggregation (i.e. mean) is used.
         normalize_time (bool): If True, normalize time to the beginning of the day.
             e.g. 2025-10-01T12:00:00 becomes 2025-10-01T00:00:00.
             Default is True.
 
     Returns:
-        Tuple[gpd.GeoDataFrame, list[str]]: First item is aggregated GeoDataFrame,
+        Tuple[pd.DataFrame, list[str]]: First item is aggregated DataFrame,
             with coordinates "NUTS_ID", "time", and
             data variables include aggregated data variables.
             The second item in the tuple is list of data variable names.
     """
     with xr.open_dataset(nc_file, chunks={"time": "auto"}) as dataset:
-        # Ensure the dataset has the required coordinates
+        # ensure the dataset has the required coordinates
         if not all(
             coord in dataset.coords for coord in ["latitude", "longitude", "time"]
         ):
@@ -1310,11 +1487,29 @@ def _aggregate_netcdf_nuts(
                 f"'latitude', 'longitude', and 'time' coordinates."
             )
 
-        if normalize_time:
-            dataset["time"] = dataset["time"].dt.floor("D")
+        # Raise error if the dataset is too large
+        num_lat = dataset.sizes.get("latitude", 0)
+        num_lon = dataset.sizes.get("longitude", 0)
+        num_time = dataset.sizes.get("time", 0)
+        num_vars = len(dataset.data_vars)
 
-        # get list of data variable names
-        var_names = list(dataset.data_vars.keys())
+        if (
+            num_lat * num_lon * num_time * num_vars
+            > 360
+            * 720
+            * 24
+            * 2  # global data for 2 years, 2 variables, 0.5 degree resolution
+        ):  # e.g. global 0.1 deg for 1 year
+            raise ValueError(
+                f"The NetCDF file '{nc_file}' may be too large for "
+                f"GeoPandas spatial join aggregation. "
+                f"Consider using 'exactextract' library for aggregation. "
+                f"Dataset size: {num_lat} lat x {num_lon} lon x {num_time} time points.",
+            )
+
+        # prepare dataset for aggregation
+        dataset, agg_dict = _prepare_for_aggregation(dataset, normalize_time, agg_dict)
+        r_var_names = list(agg_dict.keys())
 
         # Convert the NetCDF dataset to a GeoDataFrame
         nc_data = dataset.to_dataframe().reset_index()
@@ -1333,28 +1528,6 @@ def _aggregate_netcdf_nuts(
         nc_data_merged = nc_data_merged[~nc_data_merged["NUTS_ID"].isna()]
 
         # group by NUTS_ID and time, aggregate using agg_dict
-        invalid_agg_dict = agg_dict is not None and (
-            not isinstance(agg_dict, dict)
-            or not all(
-                isinstance(var, str) and isinstance(func, str)
-                for var, func in agg_dict.items()
-            )
-            or (isinstance(agg_dict, dict) and len(agg_dict) == 0)
-            or not all(var in var_names for var in agg_dict.keys())
-        )
-        if invalid_agg_dict or agg_dict is None:
-            if invalid_agg_dict:
-                warnings.warn(
-                    "Invalid agg_dict provided. Using default aggregation (mean) for all variables.",
-                    UserWarning,
-                )
-            # default aggregation is mean for each variable
-            agg_dict = dict.fromkeys(var_names, "mean")
-            r_var_names = var_names
-        else:
-            # use provided aggregation functions
-            r_var_names = list(agg_dict.keys())
-
         nc_data_agg = nc_data_merged.groupby(["NUTS_ID", "time"], as_index=False).agg(
             agg_dict
         )
@@ -1362,18 +1535,143 @@ def _aggregate_netcdf_nuts(
     return nc_data_agg, r_var_names
 
 
+def _aggregate_netcdf_nuts_ee(
+    nuts_data: gpd.GeoDataFrame,
+    nc_file: Path,
+    agg_dict: Dict[str, str] | None,
+    normalize_time: bool = True,
+) -> Tuple[pd.DataFrame, list[str]]:
+    """
+    Aggregate NetCDF data by NUTS regions using `exactextract`.
+
+    Notes:
+        * `exactextract` only consider non-`NaN` values during calculation
+            * mean of all NaN values is NaN.
+            * sum of all NaN values is 0.
+
+    Args:
+        nuts_data (gpd.GeoDataFrame): GeoDataFrame containing NUTS data from shape file.
+        nc_file (Path): Path to the NetCDF file.
+        agg_dict (Dict[str, str] | None): Dictionary of aggregation functions for each variable.
+            If None, default aggregation (i.e. mean) is used.
+        normalize_time (bool): If True, normalize time to the beginning of the day.
+            e.g. 2025-10-01T12:00:00 becomes 2025-10-01T00:00:00.
+            Default is True.
+
+    Returns:
+        Tuple[pd.DataFrame, list[str]]: First item is aggregated DataFrame,
+            with coordinates "NUTS_ID", "time", and
+            data variables include aggregated data variables.
+            The second item in the tuple is list of data variable names.
+    """
+    with xr.open_dataset(nc_file, chunks={"time": "auto"}) as dataset:
+        # ensure the dataset has the required coordinates
+        if not all(
+            coord in dataset.coords for coord in ["latitude", "longitude", "time"]
+        ):
+            raise ValueError(
+                f"NetCDF file '{nc_file}' must contain "
+                f"'latitude', 'longitude', and 'time' coordinates."
+            )
+
+        # prepare dataset for aggregation
+        dataset, agg_dict = _prepare_for_aggregation(dataset, normalize_time, agg_dict)
+        r_var_names = list(agg_dict.keys())
+
+        # aggregate data for each time step
+        data_agg_list = []
+        for time_val in dataset["time"].values:
+            data_agg_t = []
+            for data_var in r_var_names:
+                data_var_time = dataset[[data_var]].sel(time=time_val)
+
+                convert_minus = False
+                if "-" in data_var:
+                    # rename data_var to discard `-` in the name
+                    # exactextract does not support `-` in variable names
+                    updated_data_var = data_var.replace("-", "_")
+                    convert_minus = True
+                else:
+                    updated_data_var = data_var
+
+                data_var_time_agg = ee.exact_extract(
+                    data_var_time,
+                    nuts_data,
+                    f"{updated_data_var}={agg_dict[data_var]}",  # rename the agg column by data_var name
+                    include_cols=["NUTS_ID"],
+                    output="pandas",
+                )
+                data_var_time_agg["time"] = time_val  # add time column
+
+                if convert_minus:
+                    # change back the column name to original data_var name
+                    data_var_time_agg = data_var_time_agg.rename(
+                        columns={updated_data_var: data_var}
+                    )
+
+                data_agg_t.append(data_var_time_agg)
+            data_agg_list.append(data_agg_t)
+
+        # merge all aggregated dataframes
+        # by NUTS_ID and time, along all data variables
+        merged_dfs = [
+            reduce(
+                lambda left, right: pd.merge(
+                    left, right, on=["NUTS_ID", "time"], how="outer", validate="1:1"
+                ),
+                data_t,
+            )
+            for data_t in data_agg_list
+        ]
+        # concatenate all merged dataframes
+        # as they have different time steps
+        assert len(merged_dfs) == len(dataset["time"].values)
+        nc_data_agg = pd.concat(merged_dfs, ignore_index=True)
+
+    return nc_data_agg, r_var_names
+
+
+def _check_aggregation_inputs(
+    netcdf_files: dict[str, tuple[Path, Dict[str, str] | None]],
+    nuts_file: Path,
+):
+    """Check the inputs for aggregation function.
+
+    Args:
+        netcdf_files (dict[str, tuple[Path, Dict[str, str] | None]]): Dictionary of NetCDF files.
+            Keys are dataset names and values are tuples of (file path, agg_dict).
+            The agg_dict can contain aggregation options for each data variable.
+            For example, {"t2m": "mean", "tp": "sum"}.
+            If agg_dict is None, default aggregation (i.e. mean) is used.
+            NetCDF files must contain "latitude", "longitude", and "time" coordinates.
+        nuts_file (Path): Path to the NUTS regions shape file.
+            The shape file has columns such as "NUTS_ID" and "geometry".
+    """
+    if not isinstance(netcdf_files, dict) or not netcdf_files:
+        raise ValueError("netcdf_files must be a non-empty dictionary.")
+
+    for netcdf_file in netcdf_files.values():
+        if not utils.is_non_empty_file(netcdf_file[0]):
+            raise ValueError(
+                f"NetCDF file '{netcdf_file[0]}' is not valid path or empty."
+            )
+    if not utils.is_non_empty_file(nuts_file):
+        raise ValueError("nuts_file must be a valid file path.")
+
+
 def aggregate_data_by_nuts(
-    netcdf_files: dict[str, tuple[Path, dict | None]],
+    netcdf_files: dict[str, tuple[Path, Dict | None]],
     nuts_file: Path,
     normalize_time: bool = True,
     output_dir: Path | None = None,
+    agg_lib: Literal["geopandas", "exactextract"] = "exactextract",
 ) -> Path:
-    """Aggregate data from a NetCDF file by NUTS regions, data variable names, and time.
+    """Aggregate data from NetCDF files by NUTS regions, data variable names, and time.
     The aggregated data is saved to a NetCDF file with coordinates "NUTS_ID", "time",
     and data variables include aggregated data variables.
 
     Args:
-        netcdf_files (dict[str, tuple[Path, dict | None]]): Dictionary of NetCDF files.
+        netcdf_files (dict[str, tuple[Path, Dict | None]]): Dictionary of NetCDF files.
             Keys are dataset names and values are tuples of (file path, agg_dict).
             The agg_dict can contain aggregation options for each data variable.
             For example, {"t2m": "mean", "tp": "sum"}.
@@ -1387,20 +1685,14 @@ def aggregate_data_by_nuts(
         output_dir (Path | None): Directory to save the aggregated NetCDF file.
             If None, the output file is saved in the same directory as the NUTS file.
             Default is None.
+        agg_lib (Literal["geopandas", "exactextract"]): Library to use for aggregation.
+            Options are "geopandas" or "exactextract". Default is "exactextract".
 
     Returns:
         Path: Path to the aggregated NetCDF file.
     """
-    if not isinstance(netcdf_files, dict) or not netcdf_files:
-        raise ValueError("netcdf_files must be a non-empty dictionary.")
-
-    for netcdf_file in netcdf_files.values():
-        if not utils.is_non_empty_file(netcdf_file[0]):
-            raise ValueError(
-                f"NetCDF file '{netcdf_file[0]}' is not valid path or empty."
-            )
-    if not utils.is_non_empty_file(nuts_file):
-        raise ValueError("nuts_file must be a valid file path.")
+    # check inputs
+    _check_aggregation_inputs(netcdf_files, nuts_file)
 
     # load data from the nuts shape file
     nuts_data = gpd.read_file(nuts_file)
@@ -1418,35 +1710,63 @@ def aggregate_data_by_nuts(
 
     # load data from the NetCDF file
     # merge nuts data with aggregated NetCDF data
-    out_data = nuts_data
+    out_data = nuts_data["NUTS_ID"].to_frame()  # start with all NUTS_IDs
     agg_var_names = []
     first_merge = True
     for ds_name, file_info in netcdf_files.items():
         file_path, agg_dict = file_info
-        print(f"Processing NetCDF file: {file_path}")
+        logger.info(f"Processing NetCDF file: {file_path}")
 
-        nc_data_agg, r_var_names = _aggregate_netcdf_nuts(
-            nuts_data,
-            file_path,
-            agg_dict,
-            normalize_time=normalize_time,
-        )
+        if agg_lib == "geopandas":
+            nc_data_agg, r_var_names = _aggregate_netcdf_nuts_gpd(
+                nuts_data,
+                file_path,
+                agg_dict,
+                normalize_time=normalize_time,
+            )
+        elif agg_lib == "exactextract":
+            nc_data_agg, r_var_names = _aggregate_netcdf_nuts_ee(
+                nuts_data,
+                file_path,
+                agg_dict,
+                normalize_time=normalize_time,
+            )
+        else:
+            raise ValueError("agg_lib must be one of 'geopandas' or 'exactextract'.")
 
         # merge nuts data with aggregated NetCDF data
+        out_columns = set(out_data.columns) - {"NUTS_ID", "time"}
+        nc_columns = set(nc_data_agg.columns) - {"NUTS_ID", "time"}
+
         if first_merge:
             out_data = out_data.merge(nc_data_agg, on=["NUTS_ID"], how="outer")
             first_merge = False
-        elif set(nc_data_agg.columns).issubset(set(out_data.columns)):
-            # if the next NetCDF file has the same data variable names,
-            # concat the data and drop duplicates
-            out_data = gpd.GeoDataFrame(
-                pd.concat([out_data, nc_data_agg])
-                .drop_duplicates(subset=["NUTS_ID", "time"], keep="last")
-                .sort_values("NUTS_ID", ignore_index=True),
-                crs=out_data.crs,
+
+        elif out_columns.isdisjoint(nc_columns):
+            # if the next NetCDF file has different data variable names,
+            # merge the data
+            out_data = out_data.merge(
+                nc_data_agg, on=["NUTS_ID", "time"], how="outer", validate="1:1"
             )
+
         else:
-            out_data = out_data.merge(nc_data_agg, on=["NUTS_ID", "time"], how="outer")
+            # if there are overlapping data variable names,
+            # merge first with new values suffixed by '_new'
+            out_data = out_data.merge(
+                nc_data_agg,
+                on=["NUTS_ID", "time"],
+                how="outer",
+                validate="1:1",
+                suffixes=("", "_new"),
+            )
+            # update old data variable values with new values
+            for var in out_columns.intersection(nc_columns):
+                out_data[var] = out_data[var + "_new"].combine_first(out_data[var])
+
+            # drop the new suffixed columns
+            out_data = out_data.drop(
+                columns=[var + "_new" for var in out_columns.intersection(nc_columns)]
+            )
 
         # update the output file name
         out_file_name += f"_{ds_name}"
@@ -1473,6 +1793,6 @@ def aggregate_data_by_nuts(
         output_dir = nuts_file.parent
     output_file = output_dir / out_file_name
     ds_out.to_netcdf(output_file, mode="w")
-    print(f"Aggregated data saved to: {output_file}")
+    logger.info(f"Aggregated data saved to: {output_file}")
 
     return output_file
