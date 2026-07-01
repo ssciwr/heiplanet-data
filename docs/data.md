@@ -25,7 +25,7 @@ The filenames of the downloaded netCDF files follow this structure:
 {base_name}_{year_str}_{month_str}_{day_str}_{time_str}_{var_str}_{ds_type}_{area_str}_raw.{ext}
 ```
 
-* `base_name` is `"era5_data"`,
+* `base_name` is `"era5_land_data"`,
 * For list of numbers, i.e. years/months/days/times, the rule below is applied
     * If the values are continuous, the string representation is a concatenate of `min` and `max` values, separated by `-`
     * Otherwise, the string is a join of all values, separated by `_`
