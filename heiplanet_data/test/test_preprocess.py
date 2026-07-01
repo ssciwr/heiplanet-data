@@ -2320,3 +2320,26 @@ def test_apply_preprocessing_wind_height_unchanged():
     # check if height is unchanged
     assert "new_height" in preprocessed_dataset.coords
     assert np.array_equal(preprocessed_dataset["new_height"].values, org_height)
+
+
+def test_registered_steps_have_schema_entries():
+    """Guard the registry<->schema link.
+
+    Every preprocessing step registered via ``preprocess.register_step`` must
+    have a matching enable-flag property in ``setting_schema.json``, so a newly
+    added step cannot silently drift from its configuration schema. Also check
+    that step order values are unique, keeping the execution sequence
+    deterministic.
+    """
+    from importlib import resources
+
+    schema_path = resources.files("heiplanet_data") / "setting_schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    schema_props = set(schema["properties"])
+
+    step_names = [name for _order, name, _fn in preprocess._STEP_REGISTRY]
+    missing = [name for name in step_names if name not in schema_props]
+    assert not missing, f"registered steps missing from schema: {missing}"
+
+    orders = [order for order, _name, _fn in preprocess._STEP_REGISTRY]
+    assert len(orders) == len(set(orders)), f"duplicate step order values: {orders}"
