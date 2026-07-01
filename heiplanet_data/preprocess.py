@@ -1232,8 +1232,9 @@ def _apply_preprocessing(
             "suffix": unify_coords_fname,
         },
         {
-            "condition": lambda ds: adjust_longitude
-            and adjust_longitude_vname in ds.coords,
+            "condition": lambda ds: (
+                adjust_longitude and adjust_longitude_vname in ds.coords
+            ),
             "message": "Adjusting longitude from 0-360 to -180-180...",
             "transform": lambda ds: adjust_longitude_360_to_180(
                 ds, lon_name=adjust_longitude_vname
@@ -1241,8 +1242,10 @@ def _apply_preprocessing(
             "suffix": adjust_longitude_fname,
         },
         {
-            "condition": lambda ds: convert_kelvin_to_celsius
-            and convert_kelvin_to_celsius_vname in ds.data_vars,
+            "condition": lambda ds: (
+                convert_kelvin_to_celsius
+                and convert_kelvin_to_celsius_vname in ds.data_vars
+            ),
             "message": "Converting temperature from Kelvin to Celsius...",
             "transform": lambda ds: convert_to_celsius_with_attributes(
                 ds, var_name=convert_kelvin_to_celsius_vname
@@ -1250,8 +1253,10 @@ def _apply_preprocessing(
             "suffix": convert_kelvin_to_celsius_fname,
         },
         {
-            "condition": lambda ds: convert_m_to_mm_precipitation
-            and convert_m_to_mm_precipitation_vname in ds.data_vars,
+            "condition": lambda ds: (
+                convert_m_to_mm_precipitation
+                and convert_m_to_mm_precipitation_vname in ds.data_vars
+            ),
             "message": "Converting precipitation from meters to millimeters...",
             "transform": lambda ds: convert_m_to_mm_with_attributes(
                 ds, var_name=convert_m_to_mm_precipitation_vname
@@ -1259,11 +1264,13 @@ def _apply_preprocessing(
             "suffix": convert_m_to_mm_precipitation_fname,
         },
         {
-            "condition": lambda ds: cal_monthly_tp
-            and all(
-                (
-                    cal_monthly_tp_vname in ds.data_vars,
-                    cal_monthly_tp_tcoord in ds.coords,
+            "condition": lambda ds: (
+                cal_monthly_tp
+                and all(
+                    (
+                        cal_monthly_tp_vname in ds.data_vars,
+                        cal_monthly_tp_tcoord in ds.coords,
+                    )
                 )
             ),
             "message": (

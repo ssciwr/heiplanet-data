@@ -18,7 +18,7 @@ nav:
   - Data: data.md
   - Data Lake:
     - Overview: datalake.md
-    - Data Flowchart: source/_static/onehealth_data_flow.jpg
+    - Data Flowchart: source/_static/heiplanet_data_flow.jpg
   - References:
     - Package Modules: reference/
     - Demonstration Notebooks:
