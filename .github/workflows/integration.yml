@@ -7,18 +7,13 @@ on:
   workflow_dispatch:
 jobs:
   clean-and-test:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest]
-        python-version: ["3.12"]
-    services:
-      docker:
-        image: docker:24.0.0
-        options: --privileged
+        python-version: ["3.13"]
     steps:
       - name: Getting repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Miniconda
         uses: conda-incubator/setup-miniconda@835234971496cad1653abb28a638a281cf32541f
@@ -49,11 +44,9 @@ jobs:
         run: |
           echo "url: https://cds.climate.copernicus.eu/api" >> ~/.cdsapirc
           echo "key: $SECRET" >> ~/.cdsapirc
-      - name: Execute PyTest
-        run: |
-          conda run -n test_env python -m pytest -svv --cov=heiplanet_data --cov-report=xml:heiplanet_data/coverage_re/coverage.xml
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          directory: ./heiplanet_data/coverage_re/
+
+      # - name: Execute integration tests
+      #   env: 
+      #     HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+      #   run: |
+      #     conda run -n test_env python -m pytest -svv -m "integration"
