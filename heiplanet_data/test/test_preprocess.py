@@ -12,6 +12,7 @@ import xesmf as xe
 from cdo import Cdo
 import textwrap
 import pandas as pd
+from importlib import resources
 
 
 @pytest.fixture()
@@ -2331,7 +2332,6 @@ def test_registered_steps_have_schema_entries():
     that step order values are unique, keeping the execution sequence
     deterministic.
     """
-    from importlib import resources
 
     schema_path = resources.files("heiplanet_data") / "setting_schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
