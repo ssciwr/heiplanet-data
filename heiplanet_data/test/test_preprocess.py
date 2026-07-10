@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 import xarray as xr
-from heiplanet_data import preprocess
+from heiplanet_data import preprocess, utils
 import geopandas as gpd
 from shapely.geometry import Polygon
 from pathlib import Path
@@ -2324,11 +2324,13 @@ def test_apply_preprocessing_wind_height_unchanged():
 
 
 def test_registered_steps_have_schema_entries():
-    """Guard the registry<->schema link.
+    """Guard the registry<->schema link in both directions.
 
     Every preprocessing step registered via ``preprocess.register_step`` must
     have a matching enable-flag property in ``setting_schema.json``, so a newly
-    added step cannot silently drift from its configuration schema. Also check
+    added step cannot silently drift from its configuration schema. Conversely,
+    every boolean enable-flag in the schema must have a registered step, so a
+    flag cannot be added to the schema without wiring up its step. Also check
     that step order values are unique, keeping the execution sequence
     deterministic.
     """
@@ -2336,10 +2338,38 @@ def test_registered_steps_have_schema_entries():
     schema_path = resources.files("heiplanet_data") / "setting_schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     schema_props = set(schema["properties"])
+    schema_flags = {
+        name
+        for name, spec in schema["properties"].items()
+        if spec.get("type") == "boolean"
+    }
 
-    step_names = [name for _order, name, _fn in preprocess._STEP_REGISTRY]
-    missing = [name for name in step_names if name not in schema_props]
-    assert not missing, f"registered steps missing from schema: {missing}"
+    step_names = {name for _order, name, _fn in preprocess._STEP_REGISTRY}
+
+    missing = step_names - schema_props
+    assert not missing, f"registered steps missing from schema: {sorted(missing)}"
+
+    orphan_flags = schema_flags - step_names
+    assert not orphan_flags, (
+        f"schema enable-flags without a registered step: {sorted(orphan_flags)}"
+    )
 
     orders = [order for order, _name, _fn in preprocess._STEP_REGISTRY]
     assert len(orders) == len(set(orders)), f"duplicate step order values: {orders}"
+
+
+@pytest.mark.parametrize("source", ["era5", "isimip"])
+def test_shipped_settings_files_validate_against_schema(source):
+    """Regression guard: shipped default settings files honour the schema.
+
+    Each default settings JSON (``era5_settings.json``, ``isimip_settings.json``)
+    must validate against ``setting_schema.json``, so an edit that introduces an
+    unknown key, a wrong type, or a missing conditionally-required field is
+    caught here instead of at runtime.
+    """
+
+    setting_path = utils.DEFAULT_SETTINGS_FILE[source]
+    settings = json.loads(setting_path.read_text(encoding="utf-8"))
+    assert utils.is_valid_settings(settings), (
+        f"shipped settings file {setting_path} does not validate against schema"
+    )
