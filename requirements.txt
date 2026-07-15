@@ -13,3 +13,4 @@ cdo
 xagg
 exactextract
 rioxarray
+jsonschema
