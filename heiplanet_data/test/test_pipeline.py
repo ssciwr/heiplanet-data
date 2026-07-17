@@ -539,3 +539,12 @@ def test_shipped_settings_files_validate_against_schema(source):
     assert utils.is_valid_settings(settings), (
         f"shipped settings file {setting_path} does not validate against schema"
     )
+
+
+def test_replace_decimal_point():
+    assert pipeline._replace_decimal_point(1.0) == "1p0"
+    assert pipeline._replace_decimal_point(1.234) == "1p234"
+    assert pipeline._replace_decimal_point(0.1) == "01"
+
+    with pytest.raises(ValueError):
+        pipeline._replace_decimal_point("1.0")

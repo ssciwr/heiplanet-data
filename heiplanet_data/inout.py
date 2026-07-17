@@ -3,7 +3,7 @@ from pathlib import Path
 import xarray as xr
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
-from heiplanet_data import preprocess
+from heiplanet_data import temporal
 from dask.diagnostics.progress import ProgressBar
 
 
@@ -488,7 +488,7 @@ def _download_sub_tp_data(
         tmp_out = tmp_file_path.with_suffix(".truncated.nc")
         with xr.open_dataset(tmp_file_path, chunks={coord_name: "auto"}) as ds:
             print(f"Truncating data of range {range_idx} ...")
-            ds = preprocess.truncate_data_by_time(
+            ds = temporal.truncate_data_by_time(
                 ds,
                 start_date=start_time.strftime("%Y-%m-%d"),
                 end_date=end_time.strftime("%Y-%m-%d"),
@@ -617,7 +617,7 @@ def download_total_precipitation_from_hourly_era5_land(
 
     # shift time back by 1 day
     print("Shifting time back by 1 day ...")
-    preprocess.shift_time(
+    temporal.shift_time(
         combined_ds,
         offset=-1,
         time_unit="D",

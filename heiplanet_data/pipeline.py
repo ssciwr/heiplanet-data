@@ -31,7 +31,6 @@ from heiplanet_data.converters import (
 from heiplanet_data.regrid import (
     GridConfig,
     ResolutionConfig,
-    _replace_decimal_point,
     resample_resolution,
 )
 from heiplanet_data.temporal import (
@@ -41,6 +40,25 @@ from heiplanet_data.temporal import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _replace_decimal_point(degree: float) -> str:
+    """Replace the decimal point in a degree string with 'p'
+    if the degree is greater than or equal to 1.0,
+    or remove it if the degree is less than 1.0.
+
+    Args:
+        degree (float): Degree value to convert.
+
+    Returns:
+        str: String representation of the degree without decimal point.
+    """
+    if not isinstance(degree, (float)):
+        raise ValueError("Resolution degree must be a float.")
+    if degree < 1.0:
+        return str(degree).replace(".", "")
+    else:
+        return str(degree).replace(".", "p")
 
 
 # --- Preprocessing step registry -------------------------------------------

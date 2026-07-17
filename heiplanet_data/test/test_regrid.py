@@ -636,12 +636,3 @@ def test_resample_resolution(get_dataset):
     )
     tp_expected = get_dataset["tp"].interp(latitude=0.1, longitude=0.1, method="linear")
     assert np.allclose(tp_interp.values, tp_expected.values)
-
-
-def test_replace_decimal_point():
-    assert regrid._replace_decimal_point(1.0) == "1p0"
-    assert regrid._replace_decimal_point(1.234) == "1p234"
-    assert regrid._replace_decimal_point(0.1) == "01"
-
-    with pytest.raises(ValueError):
-        regrid._replace_decimal_point("1.0")

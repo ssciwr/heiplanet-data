@@ -13,18 +13,36 @@ from heiplanet_data import (
     temporal,
 )
 
-
-def test_facade_reexports_all_names():
-    for name in preprocess.__all__:
-        assert hasattr(preprocess, name)
+SUBMODULES = (converters, regrid, temporal, pipeline, nuts_aggregation)
 
 
-def test_facade_names_are_the_implementation_objects():
-    assert preprocess.convert_to_celsius is converters.convert_to_celsius
-    assert preprocess.resample_resolution is regrid.resample_resolution
-    assert preprocess.truncate_data_by_time is temporal.truncate_data_by_time
-    assert preprocess.preprocess_data_file is pipeline.preprocess_data_file
-    assert preprocess.aggregate_data_by_nuts is nuts_aggregation.aggregate_data_by_nuts
+def _defined_public_names(module):
+    """Public names whose objects are defined in the given module itself
+    (not imported into it from elsewhere)."""
+    return [
+        name
+        for name, obj in vars(module).items()
+        if not name.startswith("_")
+        and getattr(obj, "__module__", None) == module.__name__
+    ]
+
+
+def test_facade_reexports_every_public_name():
+    # catches facade drift: a public function/class added to a submodule
+    # but not re-exported by the facade fails here
+    for module in SUBMODULES:
+        for name in _defined_public_names(module):
+            assert getattr(preprocess, name, None) is getattr(module, name), (
+                f"{module.__name__}.{name} is not re-exported by the preprocess facade"
+            )
+
+
+def test_facade_reexports_module_constants():
+    # constants have no __module__ attribute, so list them explicitly
+    assert preprocess.T is converters.T
+    assert preprocess.warn_positive_resolution is regrid.warn_positive_resolution
+    assert preprocess.CRS == nuts_aggregation.CRS
+    assert preprocess.StepFn == pipeline.StepFn
 
 
 def test_facade_shares_step_registry():

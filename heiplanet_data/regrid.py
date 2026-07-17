@@ -756,22 +756,3 @@ def resample_resolution(
         lon_name=lon_name,
         method_map=upsample_method_map,
     )
-
-
-def _replace_decimal_point(degree: float) -> str:
-    """Replace the decimal point in a degree string with 'p'
-    if the degree is greater than or equal to 1.0,
-    or remove it if the degree is less than 1.0.
-
-    Args:
-        degree (float): Degree value to convert.
-
-    Returns:
-        str: String representation of the degree without decimal point.
-    """
-    if not isinstance(degree, (float)):
-        raise ValueError("Resolution degree must be a float.")
-    if degree < 1.0:
-        return str(degree).replace(".", "")
-    else:
-        return str(degree).replace(".", "p")
