@@ -67,7 +67,7 @@ def check_downsample_condition(
     if new_resolution <= old_resolution:
         raise ValueError(
             f"To downsample, degree of new resolution {new_resolution} "
-            "should be greater than {old_resolution}."
+            f"should be greater than {old_resolution}."
         )
 
     if agg_funcs is not None and not isinstance(agg_funcs, dict):
@@ -566,7 +566,7 @@ def upsample_resolution(
     if new_resolution >= old_resolution:
         raise ValueError(
             f"To upsample, degree of new resolution {new_resolution} "
-            "should be smaller than {old_resolution}."
+            f"should be smaller than {old_resolution}."
         )
 
     lat_min, lat_max = (

@@ -8,7 +8,7 @@ hide:
 
 Heidelberg Planetary Health Hub ([Hei-Planet](https://hei-planet.com/))
 
-Scientific Software Center ([SSC](https://www.ssc.uni-heidelberg.de/en)
+Scientific Software Center ([SSC](https://www.ssc.uni-heidelberg.de/en))
 
 ## Package modules
 
@@ -23,4 +23,4 @@ The `heiplanet_data` package is organized by pipeline stage:
 | [`pipeline`](reference/pipeline.md) | Settings-driven orchestration of the preprocessing steps (bronze to silver): step registry and the `preprocess_data_file` entry point. |
 | [`nuts_aggregation`](reference/nuts_aggregation.md) | Aggregation of preprocessed gridded data over NUTS regions via `exactextract` or `geopandas`: the `aggregate_data_by_nuts` entry point. |
 | [`utils`](reference/utils.md) | Shared helpers: settings loading and validation, file checks, unique tags. |
-| [`preprocess`](reference/preprocess.md) | Backward-compatible facade re-exporting the API of the former monolithic `preprocess` module; import from the dedicated modules in new code. |)
+| [`preprocess`](reference/preprocess.md) | Backward-compatible facade re-exporting the API of the former monolithic `preprocess` module; import from the dedicated modules in new code. |

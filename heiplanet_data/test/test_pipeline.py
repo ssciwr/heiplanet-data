@@ -13,14 +13,14 @@ from heiplanet_data import pipeline, utils
 def test_apply_preprocessing_unify_coords(get_dataset):
     fname_base = "test_data"
 
-    setttings = {
+    settings = {
         "unify_coords": True,
         "unify_coords_fname": "unicoords",
         "uni_coords": {"latitude": "lat", "longitude": "lon", "time": "valid_time"},
     }
     # preprocess the data file
     preprocessed_dataset, updated_fname = pipeline._apply_preprocessing(
-        get_dataset, fname_base, settings=setttings
+        get_dataset, fname_base, settings=settings
     )
     # check if the coordinates are renamed
     assert "lat" in preprocessed_dataset.coords
