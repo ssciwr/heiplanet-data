@@ -210,7 +210,6 @@ __marimo__/
 .vscode/
 
 # data files
-data/in/*
-data/out/*
-data/processed/*.DS_Store
+data/*
 .DS_Store
+.data_heiplanet_db/*
