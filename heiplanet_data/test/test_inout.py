@@ -85,7 +85,7 @@ def test_download_data_overwrite(tmp_path):
 
 
 @pytest.fixture()
-def get_data():
+def get_data_array():
     rng = np.random.default_rng(seed=42)
     data = rng.random((2, 3)) * 1000 + 273.15
     data_array = xr.DataArray(
@@ -97,12 +97,12 @@ def get_data():
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
-def test_save_to_netcdf(get_data, tmp_path):
+def test_save_to_netcdf(get_data_array, tmp_path):
     with pytest.raises(ValueError):
-        inout.save_to_netcdf(get_data, None, encoding=None)
+        inout.save_to_netcdf(get_data_array, None, encoding=None)
 
     file_name = tmp_path / "test_output_celsius.nc"
-    inout.save_to_netcdf(get_data, file_name)
+    inout.save_to_netcdf(get_data_array, file_name)
     assert file_name.exists()
     # Clean up
     file_name.unlink()
