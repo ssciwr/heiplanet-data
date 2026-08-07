@@ -1,7 +1,7 @@
 from pathlib import Path
 import time
 import pooch
-from heiplanet_data import preprocess
+from heiplanet_data import aggregate_data_by_nuts
 
 
 # change to your own data folder, if needed
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     # aggregate data by NUTS regions
     t0 = time.time()
-    aggregated_file = preprocess.aggregate_data_by_nuts(
+    aggregated_file = aggregate_data_by_nuts(
         non_nuts_data, NUTS_FILE, normalize_time=True, output_dir=DATA_FOLDER
     )
     t1 = time.time()

@@ -1,4 +1,4 @@
-from heiplanet_data import preprocess
+from heiplanet_data import aggregate_data_by_nuts
 from pathlib import Path
 import time
 import xarray as xr
@@ -23,7 +23,7 @@ non_nuts_data = {
 
 # aggregate data by NUTS regions
 t0 = time.time()
-aggregated_file = preprocess.aggregate_data_by_nuts(
+aggregated_file = aggregate_data_by_nuts(
     non_nuts_data, nuts_file, normalize_time=True, output_dir=data_root / "processed"
 )
 t1 = time.time()
