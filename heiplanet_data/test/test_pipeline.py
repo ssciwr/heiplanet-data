@@ -418,6 +418,102 @@ def test_preprocess_data_file_diff_outdir(
     (Path(tmpdir) / "data" / "processed").rmdir()
 
 
+def test_decode_years_since_time():
+    ds = xr.Dataset(
+        {"pop": (("time",), [1.0, 2.0, 3.0])},
+        coords={"time": [0.0, 1.0, 2.0]},
+    )
+    ds["time"].attrs = {
+        "units": "years since 2000-01-01 12:00:00",
+        "calendar": "proleptic_gregorian",
+    }
+
+    decoded = pipeline._decode_years_since_time(ds)
+
+    assert list(decoded["time"].values.astype("datetime64[D]").astype(str)) == [
+        "2000-01-01",
+        "2001-01-01",
+        "2002-01-01",
+    ]
+    assert "units" not in decoded["time"].attrs
+    assert "calendar" not in decoded["time"].attrs
+
+
+def test_decode_years_since_time_missing_coord():
+    ds = xr.Dataset({"pop": (("x",), [1.0])})
+    with pytest.raises(ValueError, match="not found in the dataset"):
+        pipeline._decode_years_since_time(ds)
+
+
+def test_decode_years_since_time_wrong_units():
+    ds = xr.Dataset({"pop": (("time",), [1.0])}, coords={"time": [0.0]})
+    ds["time"].attrs = {"units": "days since 2000-01-01"}
+    with pytest.raises(ValueError, match="Cannot manually decode"):
+        pipeline._decode_years_since_time(ds)
+
+
+def test_open_dataset_for_preprocessing_years_since(tmp_path, get_dataset):
+    # some ISIMIP exports use non-CF 'years since <date>' time units, which
+    # cftime/xarray refuse to decode; preprocess_data_file must fall back to
+    # decoding them by hand instead of failing on open.
+    file_path = tmp_path / "years_since.nc"
+    ds = get_dataset.copy(deep=True)
+    ds = ds.assign_coords(time=("time", [0.0, 1.0]))
+    ds["time"].attrs = {
+        "units": "years since 2024-01-01 12:00:00",
+        "calendar": "proleptic_gregorian",
+    }
+    ds.to_netcdf(file_path)
+
+    opened = pipeline._open_dataset_for_preprocessing(file_path)
+    try:
+        assert opened["time"].values[0] == np.datetime64("2024-01-01T12:00:00")
+        assert opened["time"].values[1] == np.datetime64("2025-01-01T12:00:00")
+    finally:
+        opened.close()
+
+
+def test_open_dataset_for_preprocessing_other_decode_error(tmp_path, get_dataset):
+    # a decode failure unrelated to 'years since' units must propagate
+    # unchanged, not be masked by the years-since fallback.
+    file_path = tmp_path / "bad_time.nc"
+    ds = get_dataset.copy(deep=True)
+    ds = ds.assign_coords(time=("time", [0.0, 1.0]))
+    ds["time"].attrs = {"units": "fortnights since 2024-01-01"}
+    ds.to_netcdf(file_path)
+
+    with pytest.raises(ValueError, match="fortnights"):
+        pipeline._open_dataset_for_preprocessing(file_path)
+
+
+def test_preprocess_data_file_years_since(tmp_path, get_dataset, get_simple_settings):
+    file_path = tmp_path / "test_data.nc"
+    ds = get_dataset.copy(deep=True)
+    ds = ds.assign_coords(time=("time", [0.0, 1.0]))
+    ds["time"].attrs = {
+        "units": "years since 2024-01-01 12:00:00",
+        "calendar": "proleptic_gregorian",
+    }
+    ds.to_netcdf(file_path)
+
+    settings = get_simple_settings.copy()
+    settings["truncate_date_from"] = "2024-01-01"
+    settings["truncate_date_to"] = "2024-01-02"
+    with open(tmp_path / "settings.json", "w", newline="", encoding="utf-8") as f:
+        json.dump(settings, f)
+
+    preprocessed_dataset, _ = pipeline.preprocess_data_file(
+        netcdf_file=file_path,
+        settings=tmp_path / "settings.json",
+        unique_tag="years",
+    )
+
+    assert len(preprocessed_dataset["time"]) == 1
+    assert preprocessed_dataset["time"].values[0] == np.datetime64(
+        "2024-01-01T12:00:00"
+    )
+
+
 def test_apply_preprocessing_wind_height_unchanged():
     # create a dataset with an additional "height" dimension (ERA5 wind-like)
     time_points = np.array(["2024-01-01", "2025-01-01"], dtype="datetime64[ns]")

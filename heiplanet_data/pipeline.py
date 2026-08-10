@@ -17,8 +17,10 @@ files; the orchestrator does not need to change.
 """
 
 from typing import Dict, Any, Tuple, Literal, Callable
+import re
 import xarray as xr
 import numpy as np
+import pandas as pd
 from pathlib import Path
 import logging
 from heiplanet_data import utils
@@ -294,6 +296,73 @@ def _step_truncate_date(
     return ds, fname_base
 
 
+def _decode_years_since_time(dataset: xr.Dataset, var_name: str = "time") -> xr.Dataset:
+    """Manually decode a non-CF-compliant ``"years since <date>"`` time coordinate.
+
+    Some ISIMIP exports encode annual time steps this way. ``cftime``/``xarray``
+    reject it because a year is not a fixed-length duration under the
+    Gregorian calendar, so ``xr.open_dataset`` raises a ``ValueError`` before
+    the dataset can even be read. This reproduces the intended semantics
+    (reference date plus N calendar years) by hand.
+
+    Args:
+        dataset (xr.Dataset): Dataset opened with ``decode_times=False``.
+        var_name (str): Name of the time coordinate. Default is "time".
+
+    Raises:
+        ValueError: If the coordinate is missing or its units are not of the
+            form ``"years since <date>"``.
+
+    Returns:
+        xr.Dataset: Dataset with the time coordinate decoded to datetime64.
+    """
+    if var_name not in dataset.coords:
+        raise ValueError(f"Coordinate '{var_name}' not found in the dataset.")
+
+    units = dataset[var_name].attrs.get("units", "")
+    match = re.match(r"years since (.+)", units)
+    if not match:
+        raise ValueError(f"Cannot manually decode time units '{units}'.")
+
+    ref_date = pd.Timestamp(match.group(1))
+    new_time = [
+        ref_date + pd.DateOffset(years=int(n)) for n in dataset[var_name].values
+    ]
+
+    time_attrs = dataset[var_name].attrs.copy()
+    time_attrs.pop("units", None)
+    time_attrs.pop("calendar", None)
+    dataset = dataset.assign_coords({var_name: new_time})
+    dataset[var_name].attrs = time_attrs
+    return dataset
+
+
+def _open_dataset_for_preprocessing(netcdf_file: Path) -> xr.Dataset:
+    """Open a NetCDF file for preprocessing, retrying with manual time
+    decoding for the non-standard ``"years since <date>"`` units used by
+    some ISIMIP exports.
+
+    Args:
+        netcdf_file (Path): Path to the NetCDF file to open.
+
+    Returns:
+        xr.Dataset: Opened (and, if needed, time-corrected) dataset.
+    """
+    try:
+        return xr.open_dataset(netcdf_file, chunks={})
+    except ValueError as err:
+        dataset = xr.open_dataset(netcdf_file, chunks={}, decode_times=False)
+        try:
+            dataset = _decode_years_since_time(dataset)
+        except ValueError:
+            dataset.close()
+            raise err from None
+        logger.warning(
+            f"'{netcdf_file}' uses non-CF 'years since' time units; decoded manually."
+        )
+        return dataset
+
+
 def _apply_preprocessing(
     dataset: xr.Dataset,
     file_name_base: str,
@@ -369,7 +438,7 @@ def preprocess_data_file(
     file_name = file_name[: -len("_raw")] if file_name.endswith("_raw") else file_name
     file_ext = netcdf_file.suffix
 
-    with xr.open_dataset(netcdf_file, chunks={}) as dataset:
+    with _open_dataset_for_preprocessing(netcdf_file) as dataset:
         dataset, file_name_base = _apply_preprocessing(dataset, file_name, settings)
         # save the processed dataset
         output_file = folder_path / f"{file_name_base}_{unique_tag}{file_ext}"
