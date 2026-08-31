@@ -9,10 +9,11 @@ This module manipulates the time coordinate of a dataset:
   (`calculate_monthly_precipitation`).
 """
 
-from typing import Union, Literal
-import xarray as xr
-import numpy as np
 import re
+from typing import Literal
+
+import numpy as np
+import xarray as xr
 
 
 def shift_time(
@@ -35,7 +36,7 @@ def shift_time(
         raise ValueError(f"Coordinate '{var_name}' not found in dataset.")
 
     if not isinstance(offset, int):
-        raise ValueError("Offset value must be an int.")
+        raise TypeError("Offset value must be an int.")
 
     if time_unit not in ["W", "D", "h", "m", "s", "ms", "ns"]:
         raise ValueError(
@@ -72,15 +73,15 @@ def _parse_date(date: str | np.datetime64 | None) -> np.datetime64 | None:
             raise ValueError(f"Invalid date value. Error: {e}")
 
     if not isinstance(date, np.datetime64):
-        raise ValueError("Date must be of type string, np.datetime64, or None.")
+        raise TypeError("Date must be of type string, np.datetime64, or None.")
 
     return date
 
 
 def truncate_data_by_time(
     dataset: xr.Dataset,
-    start_date: Union[str, np.datetime64],
-    end_date: Union[str, np.datetime64, None] = None,
+    start_date: str | np.datetime64,
+    end_date: str | np.datetime64 | None = None,
     var_name: str = "time",
 ) -> xr.Dataset:
     """Truncate data from a specific start date to an end date. Both dates are inclusive.
@@ -130,10 +131,7 @@ def _check_month_start_data(times: xr.DataArray) -> bool:
     days = times.dt.day.values
 
     # check if all days are 1
-    if not np.all(days == 1):
-        return False
-
-    return True
+    return bool(np.all(days == 1))
 
 
 def calculate_monthly_precipitation(

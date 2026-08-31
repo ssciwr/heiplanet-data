@@ -1,8 +1,9 @@
-from pathlib import Path
 import time
-import pooch
-from heiplanet_data import aggregate_data_by_nuts
+from pathlib import Path
 
+import pooch
+
+from heiplanet_data import aggregate_data_by_nuts
 
 # change to your own data folder, if needed
 DATA_FOLDER = Path("../heiplanet-db/.data_heiplanet_db/gold")

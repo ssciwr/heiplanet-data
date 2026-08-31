@@ -16,19 +16,22 @@ This is the only module that imports the heavy optional dependencies
 activated so that the underlying binaries are on ``PATH``.
 """
 
-from typing import Dict, Literal
-import xarray as xr
-import numpy as np
-import warnings
-from pathlib import Path
 import tempfile
 import textwrap
+import warnings
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+import numpy as np
+import xarray as xr
 import xesmf as xe
 from cdo import Cdo
-from dataclasses import dataclass
-
 
 warn_positive_resolution = "New resolution must be a positive number."
+
+# module-level singleton so it isn't constructed at every def/dataclass evaluation
+_DEFAULT_EXPECTED_LONGITUDE_MAX = np.float64(179.75)
 
 
 def check_downsample_condition(
@@ -36,7 +39,7 @@ def check_downsample_condition(
     new_resolution: float,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
-    agg_funcs: Dict[str, str] | None = None,
+    agg_funcs: dict[str, str] | None = None,
 ) -> float:
     """Check if downsampling conditions are met.
 
@@ -78,7 +81,7 @@ def check_downsample_condition(
     return old_resolution
 
 
-def check_agg_funcs(agg_funcs: Dict[str, str], valid_agg_funcs: set) -> None:
+def check_agg_funcs(agg_funcs: dict[str, str], valid_agg_funcs: set) -> None:
     """Check if aggregation functions are valid.
 
     Args:
@@ -109,7 +112,7 @@ def downsample_resolution_with_xarray(
     new_resolution: float = 0.5,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
-    agg_funcs: Dict[str, str] | None = None,
+    agg_funcs: dict[str, str] | None = None,
 ) -> xr.Dataset:
     """Downsample the resolution of a dataset.
 
@@ -178,7 +181,7 @@ def downsample_resolution_with_xarray(
 
 def align_lon_lat_with_popu_data(
     dataset: xr.Dataset,
-    expected_longitude_max: np.float64 = np.float64(179.75),
+    expected_longitude_max: np.float64 = _DEFAULT_EXPECTED_LONGITUDE_MAX,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
 ) -> xr.Dataset:
@@ -237,7 +240,7 @@ def downsample_resolution_with_xesmf(
     new_max_lon: float | None = None,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
-    agg_funcs: Dict[str, str] | None = None,
+    agg_funcs: dict[str, str] | None = None,
 ) -> xr.Dataset:
     """Downsample the resolution of a dataset using xESMF.
     Ref: https://xesmf.readthedocs.io/en/stable/notebooks/Rectilinear_grid.html
@@ -369,7 +372,7 @@ def downsample_resolution_with_xesmf(
     for func in unique_funcs:
         regridder_dict[func] = xe.Regridder(dataset, new_grid, func, periodic=True)
 
-    for var in agg_funcs.keys():
+    for var in agg_funcs:
         regridder_var_dict[var] = regridder_dict[agg_funcs[var]]
 
     # apply regridders to data variables
@@ -400,7 +403,7 @@ def downsample_resolution_with_cdo(
     new_lon_size: int | None = None,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
-    agg_funcs: Dict[str, str] | None = None,
+    agg_funcs: dict[str, str] | None = None,
     gridtype: Literal["gaussian", "lonlat", "curvilinear", "unstructured"] = "lonlat",
 ) -> xr.Dataset:
     """Downsample the resolution of a dataset using CDO.
@@ -470,9 +473,8 @@ def downsample_resolution_with_cdo(
     # split dataset into individual data variables and save to temporary files
     ds_tmp_files = {}
     for var in dataset.data_vars:
-        tmp_file = tempfile.NamedTemporaryFile(suffix=f"_{var}.nc", delete=False)
-        tmp_file_name = tmp_file.name
-        tmp_file.close()  # so xarray can write to it
+        with tempfile.NamedTemporaryFile(suffix=f"_{var}.nc", delete=False) as tmp_file:
+            tmp_file_name = tmp_file.name
         dataset[[var]].to_netcdf(
             tmp_file_name
         )  # use [[var]] to keep as dataset with coords
@@ -489,10 +491,11 @@ def downsample_resolution_with_cdo(
         ysize = {new_lat_size}
     """
     gridspec = textwrap.dedent(gridspec).strip()
-    gridspec_file = tempfile.NamedTemporaryFile(suffix="_gridspec.txt", delete=False)
-    gridspec_file_name = gridspec_file.name
-    gridspec_file.write(gridspec.encode())
-    gridspec_file.close()
+    with tempfile.NamedTemporaryFile(
+        suffix="_gridspec.txt", delete=False
+    ) as gridspec_file:
+        gridspec_file_name = gridspec_file.name
+        gridspec_file.write(gridspec.encode())
 
     # apply cdo remap to each variable file
     tmp_dss = {}
@@ -538,7 +541,7 @@ def upsample_resolution(
     new_resolution: float = 0.1,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
-    method_map: Dict[str, str] | None = None,
+    method_map: dict[str, str] | None = None,
 ) -> xr.Dataset:
     """Upsample the resolution of a dataset using `xarray.interp`.
 
@@ -625,8 +628,8 @@ class ResolutionConfig:
     lat_name: str = "latitude"
     lon_name: str = "longitude"
     downsample_lib: Literal["xarray", "xesmf", "cdo"] = "xesmf"
-    downsample_agg_funcs: Dict[str, str] | None = None
-    upsample_method_map: Dict[str, str] | None = None
+    downsample_agg_funcs: dict[str, str] | None = None
+    upsample_method_map: dict[str, str] | None = None
 
 
 @dataclass
@@ -655,7 +658,7 @@ class GridConfig:
             This is used for resampling with CDO.
     """
 
-    expected_longitude_max_xarray: np.float64 = np.float64(179.75)
+    expected_longitude_max_xarray: np.float64 = _DEFAULT_EXPECTED_LONGITUDE_MAX
     new_min_lat: float | None = None
     new_max_lat: float | None = None
     new_min_lon: float | None = None
@@ -667,19 +670,26 @@ class GridConfig:
 
 def resample_resolution(
     dataset: xr.Dataset,
-    resolution_config: ResolutionConfig = ResolutionConfig(),
-    grid_config: GridConfig = GridConfig(),
+    resolution_config: ResolutionConfig | None = None,
+    grid_config: GridConfig | None = None,
 ) -> xr.Dataset:
     """Resample the grid of a dataset to a new resolution.
 
     Args:
         dataset (xr.Dataset): Dataset to resample.
         resolution_config (ResolutionConfig): Configuration for resolution resampling.
+            Default is None, which uses the default `ResolutionConfig`.
         grid_config (GridConfig): Configuration for grid specification.
+            Default is None, which uses the default `GridConfig`.
 
     Returns:
         xr.Dataset: Resampled dataset with changed resolution.
     """
+    if resolution_config is None:
+        resolution_config = ResolutionConfig()
+    if grid_config is None:
+        grid_config = GridConfig()
+
     new_resolution = resolution_config.new_resolution
     lat_name = resolution_config.lat_name
     lon_name = resolution_config.lon_name

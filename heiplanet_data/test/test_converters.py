@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from heiplanet_data import converters
 
 
@@ -58,7 +59,7 @@ def test_adjust_longitude_360_to_180(get_dataset):
         "units"
     )
     assert adjusted_dataset["longitude"].attrs == get_dataset["longitude"].attrs
-    for var in adjusted_dataset.data_vars.keys():
+    for var in adjusted_dataset.data_vars:
         assert adjusted_dataset[var].attrs.get(
             "GRIB_longitudeOfFirstGridPointInDegrees"
         ) == np.float64(-179.9)
@@ -75,7 +76,7 @@ def test_adjust_longitude_360_to_180(get_dataset):
     )
 
     # limited area
-    for var in get_dataset.data_vars.keys():
+    for var in get_dataset.data_vars:
         get_dataset[var].attrs.update(
             {
                 "GRIB_longitudeOfFirstGridPointInDegrees": np.float64(-45.0),
@@ -85,7 +86,7 @@ def test_adjust_longitude_360_to_180(get_dataset):
     adjusted_dataset = converters.adjust_longitude_360_to_180(
         get_dataset, limited_area=True
     )
-    for var in adjusted_dataset.data_vars.keys():
+    for var in adjusted_dataset.data_vars:
         assert adjusted_dataset[var].attrs.get(
             "GRIB_longitudeOfFirstGridPointInDegrees"
         ) == np.float64(-45.0)

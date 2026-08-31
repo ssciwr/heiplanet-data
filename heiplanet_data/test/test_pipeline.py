@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import xarray as xr
 from conftest import get_files
+
 from heiplanet_data import pipeline, utils
 
 
@@ -642,5 +643,5 @@ def test_replace_decimal_point():
     assert pipeline._replace_decimal_point(1.234) == "1p234"
     assert pipeline._replace_decimal_point(0.1) == "01"
 
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pipeline._replace_decimal_point("1.0")

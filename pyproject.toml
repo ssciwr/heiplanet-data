@@ -69,3 +69,15 @@ include = [
 
 [tool.hatch.version]
 source = "vcs"
+
+[tool.ruff.lint]
+extend-ignore = [
+  # DTZ00x: the domain here is plain calendar dates (YYYY-MM-DD) with no
+  # timezone concept; forcing tz-aware datetimes throughout would be noise.
+  "DTZ001",
+  "DTZ005",
+  "DTZ007",
+  # BLE001: utils.load_json intentionally falls back to defaults on any
+  # failure to load/parse a user-supplied settings file.
+  "BLE001",
+]

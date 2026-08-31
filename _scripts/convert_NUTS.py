@@ -1,8 +1,9 @@
-from heiplanet_data import aggregate_data_by_nuts
-from pathlib import Path
 import time
+from pathlib import Path
+
 import xarray as xr
 
+from heiplanet_data import aggregate_data_by_nuts
 
 # change to your own data folder, if needed
 data_root = Path("./data/")
