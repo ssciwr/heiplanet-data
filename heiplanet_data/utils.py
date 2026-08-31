@@ -27,10 +27,7 @@ def is_non_empty_file(file_path: Path) -> bool:
     invalid_file = (
         not file_path or not file_path.exists() or file_path.stat().st_size == 0
     )
-    if invalid_file:
-        return False
-
-    return True
+    return not invalid_file
 
 
 def is_valid_settings(settings: dict) -> bool:
@@ -43,7 +40,8 @@ def is_valid_settings(settings: dict) -> bool:
     """
     pkg = resources.files("heiplanet_data")
     setting_schema_path = Path(pkg / "setting_schema.json")
-    setting_schema = json.load(open(setting_schema_path, "r", encoding="utf-8"))
+    with open(setting_schema_path, encoding="utf-8") as f:
+        setting_schema = json.load(f)
 
     try:
         jsonschema.validate(instance=settings, schema=setting_schema)

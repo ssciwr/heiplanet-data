@@ -268,7 +268,7 @@ def suggest_filename(
     times: list[str] | None = None,
     has_area: bool = False,
     base_name: str = "era5_land_data",
-    variables: list[str] = ["2m_temperature"],
+    variables: list[str] | None = None,
 ) -> str:
     """Suggest a filename that contains key metadata about the dataset.
     The format is:
@@ -291,6 +291,9 @@ def suggest_filename(
     Returns:
         str: Generated file name.
     """
+    if variables is None:
+        variables = ["2m_temperature"]
+
     year_str = _add_prefix_if_not_empty(_format_ymdt(years))
     month_str = _add_prefix_if_not_empty(_format_months(months))
     day_str = _add_prefix_if_not_empty(_format_days(days))

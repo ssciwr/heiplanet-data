@@ -808,14 +808,16 @@ def test_download_total_precipitation_from_hourly_era5_land_same_year_month(
     inout.download_data(tmp_file, dataset, request)
 
     # compare data
-    with xr.open_dataset(tmp_file) as tmp_ds:
-        with xr.open_dataset(output_file_path) as out_ds:
-            np.testing.assert_allclose(
-                tmp_ds["tp"].values,
-                out_ds["tp"].values,
-                rtol=1e-5,
-                atol=1e-5,
-            )
+    with (
+        xr.open_dataset(tmp_file) as tmp_ds,
+        xr.open_dataset(output_file_path) as out_ds,
+    ):
+        np.testing.assert_allclose(
+            tmp_ds["tp"].values,
+            out_ds["tp"].values,
+            rtol=1e-5,
+            atol=1e-5,
+        )
 
     # clean up
     output_file_path.unlink()

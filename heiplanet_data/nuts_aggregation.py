@@ -70,7 +70,7 @@ def _prepare_for_aggregation(
             for var, func in agg_dict.items()
         )
         or (isinstance(agg_dict, dict) and len(agg_dict) == 0)
-        or not all(var in var_names for var in agg_dict.keys())
+        or not all(var in var_names for var in agg_dict)
     )
     if invalid_agg_dict or agg_dict is None:
         if invalid_agg_dict:

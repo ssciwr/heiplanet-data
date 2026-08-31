@@ -66,7 +66,7 @@ def adjust_longitude_360_to_180(
     dataset[lon_name].attrs = lon_attrs
 
     # update attributes of data variables
-    for var in dataset.data_vars.keys():
+    for var in dataset.data_vars:
         if limited_area:
             # get old attribute values
             old_lon_first_grid = dataset[var].attrs.get(

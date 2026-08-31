@@ -58,7 +58,7 @@ def _replace_decimal_point(degree: float) -> str:
         str: String representation of the degree without decimal point.
     """
     if not isinstance(degree, (float)):
-        raise ValueError("Resolution degree must be a float.")
+        raise TypeError("Resolution degree must be a float.")
     if degree < 1.0:
         return str(degree).replace(".", "")
     else:

@@ -6,7 +6,7 @@ from heiplanet_data import temporal
 
 
 def test_shift_time_invalid(get_dataset):
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         temporal.shift_time(
             get_dataset, offset="invalid", time_unit="D", var_name="time"
         )
@@ -65,7 +65,7 @@ def test_parse_date_invalid():
     with pytest.raises(ValueError):
         temporal._parse_date(date="2024-13-01")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         temporal._parse_date(date=12345)
 
 

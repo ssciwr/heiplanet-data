@@ -36,7 +36,7 @@ def shift_time(
         raise ValueError(f"Coordinate '{var_name}' not found in dataset.")
 
     if not isinstance(offset, int):
-        raise ValueError("Offset value must be an int.")
+        raise TypeError("Offset value must be an int.")
 
     if time_unit not in ["W", "D", "h", "m", "s", "ms", "ns"]:
         raise ValueError(
@@ -73,7 +73,7 @@ def _parse_date(date: str | np.datetime64 | None) -> np.datetime64 | None:
             raise ValueError(f"Invalid date value. Error: {e}")
 
     if not isinstance(date, np.datetime64):
-        raise ValueError("Date must be of type string, np.datetime64, or None.")
+        raise TypeError("Date must be of type string, np.datetime64, or None.")
 
     return date
 
@@ -131,10 +131,7 @@ def _check_month_start_data(times: xr.DataArray) -> bool:
     days = times.dt.day.values
 
     # check if all days are 1
-    if not np.all(days == 1):
-        return False
-
-    return True
+    return bool(np.all(days == 1))
 
 
 def calculate_monthly_precipitation(

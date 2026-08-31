@@ -70,7 +70,7 @@ def test_downsample_resolution_with_xarray_default(get_dataset):
 
     # check attributes
     assert downsampled_dataset.attrs == get_dataset.attrs
-    for var in downsampled_dataset.data_vars.keys():
+    for var in downsampled_dataset.data_vars:
         assert downsampled_dataset[var].attrs == get_dataset[var].attrs
 
 
@@ -104,7 +104,7 @@ def test_downsample_resolution_with_xarray_custom(get_dataset):
 
     # check attributes
     assert downsampled_dataset.attrs == get_dataset.attrs
-    for var in downsampled_dataset.data_vars.keys():
+    for var in downsampled_dataset.data_vars:
         assert downsampled_dataset[var].attrs == get_dataset[var].attrs
 
 
@@ -153,8 +153,8 @@ def test_downsample_resolution_with_xesmf_custom(get_dataset):
 
     # check attributes
     assert downsampled_dataset.attrs == get_dataset.attrs
-    for var in downsampled_dataset.data_vars.keys():
-        for att in downsampled_dataset[var].attrs.keys():
+    for var in downsampled_dataset.data_vars:
+        for att in downsampled_dataset[var].attrs:
             if att != "regrid_method":
                 assert (
                     downsampled_dataset[var].attrs[att] == get_dataset[var].attrs[att]
@@ -505,7 +505,7 @@ def test_upsample_resolution_default(get_dataset):
 
     # check attributes
     assert upsampled_dataset.attrs == get_dataset.attrs
-    for var in upsampled_dataset.data_vars.keys():
+    for var in upsampled_dataset.data_vars:
         assert upsampled_dataset[var].attrs == get_dataset[var].attrs
 
 
