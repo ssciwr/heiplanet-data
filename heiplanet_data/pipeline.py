@@ -16,13 +16,16 @@ here and add its keys to ``setting_schema.json`` and the settings JSON
 files; the orchestrator does not need to change.
 """
 
-from typing import Dict, Any, Tuple, Literal, Callable
+import logging
 import re
-import xarray as xr
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, Literal
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-import logging
+import xarray as xr
+
 from heiplanet_data import utils
 from heiplanet_data.converters import (
     adjust_longitude_360_to_180,
@@ -39,7 +42,6 @@ from heiplanet_data.temporal import (
     calculate_monthly_precipitation,
     truncate_data_by_time,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +74,11 @@ def _replace_decimal_point(degree: float) -> str:
 # keys to setting_schema.json and the settings JSON files. No edit to the
 # orchestrator `_apply_preprocessing` is needed.
 StepFn = Callable[
-    [xr.Dataset, str, Dict[str, Any], logging.Logger],
-    Tuple[xr.Dataset, str],
+    [xr.Dataset, str, dict[str, Any], logging.Logger],
+    tuple[xr.Dataset, str],
 ]
 
-_STEP_REGISTRY: list[Tuple[int, str, StepFn]] = []
+_STEP_REGISTRY: list[tuple[int, str, StepFn]] = []
 
 
 def register_step(name: str, order: int) -> Callable[[StepFn], StepFn]:
@@ -107,7 +109,7 @@ def _apply_simple_step(
     transform: Callable[[xr.Dataset], xr.Dataset],
     suffix: str | None,
     logger: logging.Logger,
-) -> Tuple[xr.Dataset, str]:
+) -> tuple[xr.Dataset, str]:
     """Run a step following the flag/condition/transform/suffix pattern.
 
     Args:
@@ -134,8 +136,8 @@ def _apply_simple_step(
 
 @register_step("unify_coords", order=10)
 def _step_unify_coords(
-    ds: xr.Dataset, fname_base: str, s: Dict[str, Any], logger: logging.Logger
-) -> Tuple[xr.Dataset, str]:
+    ds: xr.Dataset, fname_base: str, s: dict[str, Any], logger: logging.Logger
+) -> tuple[xr.Dataset, str]:
     """Rename coordinates to unify them across datasets."""
     return _apply_simple_step(
         ds,
@@ -151,8 +153,8 @@ def _step_unify_coords(
 
 @register_step("adjust_longitude", order=20)
 def _step_adjust_longitude(
-    ds: xr.Dataset, fname_base: str, s: Dict[str, Any], logger: logging.Logger
-) -> Tuple[xr.Dataset, str]:
+    ds: xr.Dataset, fname_base: str, s: dict[str, Any], logger: logging.Logger
+) -> tuple[xr.Dataset, str]:
     """Adjust longitude from 0-360 to -180-180 (full map only)."""
     vname = s.get("adjust_longitude_vname")
     return _apply_simple_step(
@@ -170,8 +172,8 @@ def _step_adjust_longitude(
 
 @register_step("convert_kelvin_to_celsius", order=30)
 def _step_convert_kelvin_to_celsius(
-    ds: xr.Dataset, fname_base: str, s: Dict[str, Any], logger: logging.Logger
-) -> Tuple[xr.Dataset, str]:
+    ds: xr.Dataset, fname_base: str, s: dict[str, Any], logger: logging.Logger
+) -> tuple[xr.Dataset, str]:
     """Convert temperature from Kelvin to Celsius."""
     vname = s.get("convert_kelvin_to_celsius_vname")
     return _apply_simple_step(
@@ -188,8 +190,8 @@ def _step_convert_kelvin_to_celsius(
 
 @register_step("convert_m_to_mm_precipitation", order=40)
 def _step_convert_m_to_mm_precipitation(
-    ds: xr.Dataset, fname_base: str, s: Dict[str, Any], logger: logging.Logger
-) -> Tuple[xr.Dataset, str]:
+    ds: xr.Dataset, fname_base: str, s: dict[str, Any], logger: logging.Logger
+) -> tuple[xr.Dataset, str]:
     """Convert precipitation from meters to millimeters."""
     vname = s.get("convert_m_to_mm_precipitation_vname")
     return _apply_simple_step(
@@ -206,8 +208,8 @@ def _step_convert_m_to_mm_precipitation(
 
 @register_step("cal_monthly_tp", order=45)
 def _step_cal_monthly_tp(
-    ds: xr.Dataset, fname_base: str, s: Dict[str, Any], logger: logging.Logger
-) -> Tuple[xr.Dataset, str]:
+    ds: xr.Dataset, fname_base: str, s: dict[str, Any], logger: logging.Logger
+) -> tuple[xr.Dataset, str]:
     """Calculate monthly total precipitation from downloaded monthly data."""
     vname = s.get("cal_monthly_tp_vname")
     tcoord = s.get("cal_monthly_tp_tcoord")
@@ -230,8 +232,8 @@ def _step_cal_monthly_tp(
 
 @register_step("resample_grid", order=50)
 def _step_resample_grid(
-    ds: xr.Dataset, fname_base: str, s: Dict[str, Any], logger: logging.Logger
-) -> Tuple[xr.Dataset, str]:
+    ds: xr.Dataset, fname_base: str, s: dict[str, Any], logger: logging.Logger
+) -> tuple[xr.Dataset, str]:
     """Resample the grid to a new resolution (multi-library step)."""
     resample_grid_vname = s.get("resample_grid_vname")
     lat_name, lon_name = resample_grid_vname if resample_grid_vname else (None, None)
@@ -271,8 +273,8 @@ def _step_resample_grid(
 
 @register_step("truncate_date", order=60)
 def _step_truncate_date(
-    ds: xr.Dataset, fname_base: str, s: Dict[str, Any], logger: logging.Logger
-) -> Tuple[xr.Dataset, str]:
+    ds: xr.Dataset, fname_base: str, s: dict[str, Any], logger: logging.Logger
+) -> tuple[xr.Dataset, str]:
     """Truncate the time series to a date range."""
     truncate_date_vname = s.get("truncate_date_vname")
     if not (s.get("truncate_date", False) and truncate_date_vname in ds.coords):
@@ -366,8 +368,8 @@ def _open_dataset_for_preprocessing(netcdf_file: Path) -> xr.Dataset:
 def _apply_preprocessing(
     dataset: xr.Dataset,
     file_name_base: str,
-    settings: Dict[str, Any],
-) -> Tuple[xr.Dataset, str]:
+    settings: dict[str, Any],
+) -> tuple[xr.Dataset, str]:
     """Apply registered preprocessing steps to the dataset based on settings.
 
     Steps run in ascending order of their ``register_step`` ``order`` value,
@@ -391,9 +393,9 @@ def preprocess_data_file(
     netcdf_file: Path,
     source: Literal["era5", "isimip"] = "era5",
     settings: Path | str = "default",
-    new_settings: Dict[str, Any] | None = None,
+    new_settings: dict[str, Any] | None = None,
     unique_tag: str | None = None,
-) -> Tuple[xr.Dataset, str]:
+) -> tuple[xr.Dataset, str]:
     """Preprocess the dataset based on provided settings.
     If the settings path is "default", use the default settings of the source.
     The settings and preprocessed files are saved in the directory,
@@ -435,7 +437,7 @@ def preprocess_data_file(
 
     # prepare to preprocess NetCDF file
     file_name = netcdf_file.stem
-    file_name = file_name[: -len("_raw")] if file_name.endswith("_raw") else file_name
+    file_name = file_name.removesuffix("_raw")
     file_ext = netcdf_file.suffix
 
     with _open_dataset_for_preprocessing(netcdf_file) as dataset:

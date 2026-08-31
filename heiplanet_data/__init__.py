@@ -32,6 +32,15 @@ from heiplanet_data.converters import (
     convert_to_celsius_with_attributes,
     rename_coords,
 )
+from heiplanet_data.nuts_aggregation import (
+    CRS,
+    aggregate_data_by_nuts,
+)
+from heiplanet_data.pipeline import (
+    StepFn,
+    preprocess_data_file,
+    register_step,
+)
 from heiplanet_data.regrid import (
     GridConfig,
     ResolutionConfig,
@@ -49,15 +58,6 @@ from heiplanet_data.temporal import (
     calculate_monthly_precipitation,
     shift_time,
     truncate_data_by_time,
-)
-from heiplanet_data.pipeline import (
-    StepFn,
-    preprocess_data_file,
-    register_step,
-)
-from heiplanet_data.nuts_aggregation import (
-    CRS,
-    aggregate_data_by_nuts,
 )
 
 __all__ = [

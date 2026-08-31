@@ -1,14 +1,16 @@
-import cdsapi
-from pathlib import Path
-import xarray as xr
-from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
-from heiplanet_data import temporal
+from pathlib import Path
+from typing import Any
+
+import cdsapi
+import xarray as xr
 from dask.diagnostics.progress import ProgressBar
+
+from heiplanet_data import temporal
 
 
 def download_data(
-    output_file: Path, dataset: str, request: Dict[str, Any], overwrite: bool = False
+    output_file: Path, dataset: str, request: dict[str, Any], overwrite: bool = False
 ):
     """Download data from Copernicus's CDS using the cdsapi.
 
@@ -39,10 +41,10 @@ def download_data(
 
     client = cdsapi.Client()
     client.retrieve(dataset, request, target=str(output_file))
-    print("Data downloaded successfully to {}".format(output_file))
+    print(f"Data downloaded successfully to {output_file}")
 
 
-def save_to_netcdf(data: xr.DataArray, filename: str, encoding: Optional[Dict] = None):
+def save_to_netcdf(data: xr.DataArray, filename: str, encoding: dict | None = None):
     """Save data to a NetCDF file.
 
     Args:
@@ -55,10 +57,10 @@ def save_to_netcdf(data: xr.DataArray, filename: str, encoding: Optional[Dict] =
         raise ValueError("Filename must be provided.")
 
     data.to_netcdf(filename, encoding=encoding)  # TODO: check structure of encoding
-    print("Data saved to {}".format(filename))
+    print(f"Data saved to {filename}")
 
 
-def _format_ymdt(numbers: List[str] | None) -> str:
+def _format_ymdt(numbers: list[str] | None) -> str:
     """Format years, months, days or times into a string representation.
     If numbers is None, return empty string.
     If numbers are continuous, return start and end values (e.g., '01_12').
@@ -86,7 +88,7 @@ def _format_ymdt(numbers: List[str] | None) -> str:
         return "_".join(f"{n:02d}" for n in num_list)
 
 
-def _format_months(months: List[str] | None) -> str:
+def _format_months(months: list[str] | None) -> str:
     """Format months into a string representation.
     If months is None, return empty string.
     If all months are selected, return 'allm'.
@@ -108,7 +110,7 @@ def _format_months(months: List[str] | None) -> str:
         return _format_ymdt(months)
 
 
-def _format_days(days: List[str] | None) -> str:
+def _format_days(days: list[str] | None) -> str:
     """Format days into a string representation.
     If days is None, return empty string.
     If all days are selected, return 'alld'.
@@ -130,7 +132,7 @@ def _format_days(days: List[str] | None) -> str:
         return _format_ymdt(days)
 
 
-def _format_times(times: List[str] | None) -> str:
+def _format_times(times: list[str] | None) -> str:
     """Format times into a string representation.
     If times is None, return empty string.
     If only "00:00" is selected, return "midnight".
@@ -154,7 +156,7 @@ def _format_times(times: List[str] | None) -> str:
         return _format_ymdt([t.split(":")[0] for t in times])
 
 
-def _format_variables(variables: List[str]) -> str:
+def _format_variables(variables: list[str]) -> str:
     """Format variables into a string representation.
     Join all first letters of variable names with underscores.
     E.g. ['2m_temperature', 'total_precipitation'] -> '2t_tp'.
@@ -260,13 +262,13 @@ def _truncate_string(s: str, max_length: int = 100) -> str:
 def suggest_filename(
     ds_name: str,
     data_format: str,
-    years: List[str] | None,
-    months: List[str] | None,
-    days: List[str] | None = None,
-    times: List[str] | None = None,
+    years: list[str] | None,
+    months: list[str] | None,
+    days: list[str] | None = None,
+    times: list[str] | None = None,
     has_area: bool = False,
     base_name: str = "era5_land_data",
-    variables: List[str] = ["2m_temperature"],
+    variables: list[str] = ["2m_temperature"],
 ) -> str:
     """Suggest a filename that contains key metadata about the dataset.
     The format is:
@@ -312,7 +314,7 @@ def suggest_filename(
 
 def _split_date_range_by_full_years(
     start_time: datetime, end_time: datetime
-) -> List[Tuple[datetime, datetime]]:
+) -> list[tuple[datetime, datetime]]:
     """Split a date range into sub-ranges
     with one range covering as many full years as possible.
     The rest of the range is split into two sub-ranges at the start and end, if needed.
@@ -370,7 +372,7 @@ def _split_date_range_by_full_years(
 
 def _extract_years_months_days_from_range(
     start_time: datetime, end_time: datetime
-) -> Tuple[List[str], List[str], List[str], bool]:
+) -> tuple[list[str], list[str], list[str], bool]:
     """Extract years, months, and days from start and end datetime objects.
     For simplicity:
         * If the start and end times are in different years,
@@ -421,9 +423,9 @@ def _extract_years_months_days_from_range(
 
 
 def _download_sub_tp_data(
-    date_range: Tuple[datetime, datetime],
+    date_range: tuple[datetime, datetime],
     range_idx: int,
-    area: List[float],
+    area: list[float],
     out_dir: Path,
     file_name: str,
     file_ext: str,
@@ -519,7 +521,7 @@ def _download_sub_tp_data(
 def download_total_precipitation_from_hourly_era5_land(
     start_date: str,
     end_date: str,
-    area: List[float] | None = None,
+    area: list[float] | None = None,
     out_dir: Path = Path("."),
     base_name: str = "era5_land_data",
     data_format: str = "netcdf",
@@ -649,10 +651,6 @@ def download_total_precipitation_from_hourly_era5_land(
         for tmp_file in tmp_files:
             tmp_file.unlink()
 
-    print(
-        "Total precipitation data from hourly dataset saved to {}".format(
-            output_file_path
-        )
-    )
+    print(f"Total precipitation data from hourly dataset saved to {output_file_path}")
 
     return str(output_file_path)

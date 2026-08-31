@@ -1,8 +1,10 @@
-from heiplanet_data import inout
+from datetime import datetime
+
+import numpy as np
 import pytest
 import xarray as xr
-import numpy as np
-from datetime import datetime
+
+from heiplanet_data import inout
 
 
 def test_download_data_invalid(tmp_path):
@@ -175,10 +177,10 @@ def test_format_times():
     times = ["00:00"]
     assert inout._format_times(times) == "midnight"
 
-    times = [f"{str(i).zfill(2)}:00" for i in range(0, 24)]
+    times = [f"{str(i).zfill(2)}:00" for i in range(24)]
     assert inout._format_times(times) == "allt"
 
-    times = [f"{str(i).zfill(2)}:00" for i in range(0, 12)]
+    times = [f"{str(i).zfill(2)}:00" for i in range(12)]
     assert inout._format_times(times) == "00-11"
 
     times = [f"{str(i).zfill(2)}:00" for i in range(0, 24, 2)]
@@ -483,7 +485,7 @@ def test_suggest_filename_days_times_dstype():
         years=["2025"],
         months=["01"],
         days=[str(i).zfill(2) for i in range(1, 32)],
-        times=[f"{str(i).zfill(2)}:00" for i in range(0, 24)],
+        times=[f"{str(i).zfill(2)}:00" for i in range(24)],
         has_area=False,
         base_name="era5_data",
         variables=["2m_temperature"],
@@ -496,7 +498,7 @@ def test_suggest_filename_days_times_dstype():
         years=["2025"],
         months=["01"],
         days=[str(i).zfill(2) for i in range(1, 11)],
-        times=[f"{str(i).zfill(2)}:00" for i in range(0, 11)],
+        times=[f"{str(i).zfill(2)}:00" for i in range(11)],
         has_area=False,
         base_name="era5_data",
         variables=["2m_temperature"],

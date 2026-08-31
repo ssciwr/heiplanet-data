@@ -9,10 +9,11 @@ This module manipulates the time coordinate of a dataset:
   (`calculate_monthly_precipitation`).
 """
 
-from typing import Union, Literal
-import xarray as xr
-import numpy as np
 import re
+from typing import Literal
+
+import numpy as np
+import xarray as xr
 
 
 def shift_time(
@@ -79,8 +80,8 @@ def _parse_date(date: str | np.datetime64 | None) -> np.datetime64 | None:
 
 def truncate_data_by_time(
     dataset: xr.Dataset,
-    start_date: Union[str, np.datetime64],
-    end_date: Union[str, np.datetime64, None] = None,
+    start_date: str | np.datetime64,
+    end_date: str | np.datetime64 | None = None,
     var_name: str = "time",
 ) -> xr.Dataset:
     """Truncate data from a specific start date to an end date. Both dates are inclusive.

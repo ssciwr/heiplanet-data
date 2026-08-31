@@ -14,17 +14,18 @@ and time step:
 This is the only module that imports ``exactextract``.
 """
 
-from typing import Dict, Tuple, Literal
-import warnings
-from pathlib import Path
 import logging
+import warnings
 from functools import reduce
-import xarray as xr
-import pandas as pd
-import geopandas as gpd
-import exactextract as ee
-from heiplanet_data import utils
+from pathlib import Path
+from typing import Literal
 
+import exactextract as ee
+import geopandas as gpd
+import pandas as pd
+import xarray as xr
+
+from heiplanet_data import utils
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,8 @@ CRS = 4326  # EPSG code for WGS 84
 def _prepare_for_aggregation(
     dataset: xr.Dataset,
     normalize_time: bool = True,
-    agg_dict: Dict[str, str] | None = None,
-) -> Tuple[xr.Dataset, Dict[str, str]]:
+    agg_dict: dict[str, str] | None = None,
+) -> tuple[xr.Dataset, dict[str, str]]:
     """
     Prepare the dataset for aggregation by:
         * normalizing time if needed,
@@ -86,9 +87,9 @@ def _prepare_for_aggregation(
 def _aggregate_netcdf_nuts_gpd(
     nuts_data: gpd.GeoDataFrame,
     nc_file: Path,
-    agg_dict: Dict[str, str] | None,
+    agg_dict: dict[str, str] | None,
     normalize_time: bool = True,
-) -> Tuple[pd.DataFrame, list[str]]:
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Aggregate NetCDF data by NUTS regions using GeoPandas (i.e. `sjoin`).
 
@@ -174,9 +175,9 @@ def _aggregate_netcdf_nuts_gpd(
 def _aggregate_netcdf_nuts_ee(
     nuts_data: gpd.GeoDataFrame,
     nc_file: Path,
-    agg_dict: Dict[str, str] | None,
+    agg_dict: dict[str, str] | None,
     normalize_time: bool = True,
-) -> Tuple[pd.DataFrame, list[str]]:
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Aggregate NetCDF data by NUTS regions using `exactextract`.
 
@@ -268,7 +269,7 @@ def _aggregate_netcdf_nuts_ee(
 
 
 def _check_aggregation_inputs(
-    netcdf_files: dict[str, tuple[Path, Dict[str, str] | None]],
+    netcdf_files: dict[str, tuple[Path, dict[str, str] | None]],
     nuts_file: Path,
 ):
     """Check the inputs for aggregation function.
@@ -296,7 +297,7 @@ def _check_aggregation_inputs(
 
 
 def aggregate_data_by_nuts(
-    netcdf_files: dict[str, tuple[Path, Dict | None]],
+    netcdf_files: dict[str, tuple[Path, dict | None]],
     nuts_file: Path,
     normalize_time: bool = True,
     output_dir: Path | None = None,

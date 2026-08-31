@@ -16,17 +16,17 @@ This is the only module that imports the heavy optional dependencies
 activated so that the underlying binaries are on ``PATH``.
 """
 
-from typing import Dict, Literal
-import xarray as xr
-import numpy as np
-import warnings
-from pathlib import Path
 import tempfile
 import textwrap
+import warnings
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+import numpy as np
+import xarray as xr
 import xesmf as xe
 from cdo import Cdo
-from dataclasses import dataclass
-
 
 warn_positive_resolution = "New resolution must be a positive number."
 
@@ -36,7 +36,7 @@ def check_downsample_condition(
     new_resolution: float,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
-    agg_funcs: Dict[str, str] | None = None,
+    agg_funcs: dict[str, str] | None = None,
 ) -> float:
     """Check if downsampling conditions are met.
 
@@ -78,7 +78,7 @@ def check_downsample_condition(
     return old_resolution
 
 
-def check_agg_funcs(agg_funcs: Dict[str, str], valid_agg_funcs: set) -> None:
+def check_agg_funcs(agg_funcs: dict[str, str], valid_agg_funcs: set) -> None:
     """Check if aggregation functions are valid.
 
     Args:
@@ -109,7 +109,7 @@ def downsample_resolution_with_xarray(
     new_resolution: float = 0.5,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
-    agg_funcs: Dict[str, str] | None = None,
+    agg_funcs: dict[str, str] | None = None,
 ) -> xr.Dataset:
     """Downsample the resolution of a dataset.
 
@@ -237,7 +237,7 @@ def downsample_resolution_with_xesmf(
     new_max_lon: float | None = None,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
-    agg_funcs: Dict[str, str] | None = None,
+    agg_funcs: dict[str, str] | None = None,
 ) -> xr.Dataset:
     """Downsample the resolution of a dataset using xESMF.
     Ref: https://xesmf.readthedocs.io/en/stable/notebooks/Rectilinear_grid.html
@@ -400,7 +400,7 @@ def downsample_resolution_with_cdo(
     new_lon_size: int | None = None,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
-    agg_funcs: Dict[str, str] | None = None,
+    agg_funcs: dict[str, str] | None = None,
     gridtype: Literal["gaussian", "lonlat", "curvilinear", "unstructured"] = "lonlat",
 ) -> xr.Dataset:
     """Downsample the resolution of a dataset using CDO.
@@ -538,7 +538,7 @@ def upsample_resolution(
     new_resolution: float = 0.1,
     lat_name: str = "latitude",
     lon_name: str = "longitude",
-    method_map: Dict[str, str] | None = None,
+    method_map: dict[str, str] | None = None,
 ) -> xr.Dataset:
     """Upsample the resolution of a dataset using `xarray.interp`.
 
@@ -625,8 +625,8 @@ class ResolutionConfig:
     lat_name: str = "latitude"
     lon_name: str = "longitude"
     downsample_lib: Literal["xarray", "xesmf", "cdo"] = "xesmf"
-    downsample_agg_funcs: Dict[str, str] | None = None
-    upsample_method_map: Dict[str, str] | None = None
+    downsample_agg_funcs: dict[str, str] | None = None
+    upsample_method_map: dict[str, str] | None = None
 
 
 @dataclass

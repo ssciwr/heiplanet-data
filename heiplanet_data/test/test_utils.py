@@ -1,9 +1,11 @@
-import pytest
 import json
-from pathlib import Path
-from heiplanet_data import utils
 from datetime import datetime
+from pathlib import Path
+
+import pytest
 from conftest import get_files
+
+from heiplanet_data import utils
 
 
 def test_is_non_empty_file(tmp_path):

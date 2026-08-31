@@ -1,10 +1,11 @@
 import time
 from pathlib import Path
+
+from heiplanet_data import preprocess_data_file
 from heiplanet_data.inout import (
     download_data,
     get_filename,
 )
-from heiplanet_data import preprocess_data_file
 
 if __name__ == "__main__":
     # get the era5 land data for 2016 and 2017
@@ -41,7 +42,7 @@ if __name__ == "__main__":
         print("Downloading data...")
         download_data(output_file, dataset, request)
     else:
-        print("Data already exists at {}".format(output_file))
+        print(f"Data already exists at {output_file}")
 
     print(f"Preprocessing ERA5-Land data: {output_file}")
     t0 = time.time()

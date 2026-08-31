@@ -16,13 +16,13 @@ The ``*_with_attributes`` variants operate on a whole dataset and keep the
 variable attributes (e.g. GRIB metadata) intact.
 """
 
-from typing import TypeVar, Union
-import xarray as xr
-import numpy as np
 import warnings
+from typing import TypeVar
 
+import numpy as np
+import xarray as xr
 
-T = TypeVar("T", bound=Union[np.float64, xr.DataArray])
+T = TypeVar("T", bound=np.float64 | xr.DataArray)
 
 
 def convert_360_to_180(longitude: T) -> T:

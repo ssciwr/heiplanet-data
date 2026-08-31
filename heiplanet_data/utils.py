@@ -1,13 +1,12 @@
-from pathlib import Path
-from importlib import resources
 import json
-import jsonschema
-import warnings
-from typing import Dict, Any, Tuple
-from datetime import datetime
 import socket
-from typing import Optional
+import warnings
+from datetime import datetime
+from importlib import resources
+from pathlib import Path
+from typing import Any
 
+import jsonschema
 
 pkg = resources.files("heiplanet_data")
 DEFAULT_SETTINGS_FILE = {
@@ -75,7 +74,7 @@ def _update_new_settings(settings: dict, new_settings: dict) -> bool:
         updatable = key in settings and settings[key] != new_value
         if key not in settings:
             warnings.warn(
-                "Key {} not found in the settings and will be skipped.".format(key),
+                f"Key {key} not found in the settings and will be skipped.",
                 UserWarning,
             )
         if updatable:
@@ -85,8 +84,8 @@ def _update_new_settings(settings: dict, new_settings: dict) -> bool:
                 updated = True
             else:
                 warnings.warn(
-                    "The new value for key {} is not valid in the settings. "
-                    "Reverting to the old value: {}".format(key, old_value),
+                    f"The new value for key {key} is not valid in the settings. "
+                    f"Reverting to the old value: {old_value}",
                     UserWarning,
                 )
                 settings[key] = old_value
@@ -96,7 +95,7 @@ def _update_new_settings(settings: dict, new_settings: dict) -> bool:
 
 def save_settings_to_file(
     settings: dict,
-    dir_path: Optional[str] = None,
+    dir_path: str | None = None,
     file_name: str = "updated_settings.json",
 ) -> None:
     """Save the settings to a file.
@@ -119,21 +118,21 @@ def save_settings_to_file(
             file_path = Path(dir_path) / file_name
         except FileExistsError:
             raise ValueError(
-                "The path {} already exists and is not a directory".format(dir_path)
+                f"The path {dir_path} already exists and is not a directory"
             )
 
     # save the settings to a file
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(settings, f, indent=4, ensure_ascii=False)
 
-    print("The settings have been saved to {}".format(file_path))
+    print(f"The settings have been saved to {file_path}")
 
 
 def load_settings(
     source: str = "era5",
     setting_path: Path | str = "default",
     new_settings: dict | None = None,
-) -> Tuple[Dict[str, Any], str]:
+) -> tuple[dict[str, Any], str]:
     """Get the settings for preprocessing steps.
     If the setting path is "default", return the default settings of the source.
     If the setting path is not default, read the settings from the file.
@@ -159,7 +158,7 @@ def load_settings(
             f"Default settings file for source {source} not found or is empty."
         )
 
-    def load_json(file_path: Path) -> Tuple[Dict[str, Any], str]:
+    def load_json(file_path: Path) -> tuple[dict[str, Any], str]:
         with open(file_path, "r", encoding="utf-8") as file:
             return json.load(file), file_path.stem
 
