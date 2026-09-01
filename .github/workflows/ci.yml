@@ -57,3 +57,4 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./heiplanet_data/coverage_re/
+          flags: unit

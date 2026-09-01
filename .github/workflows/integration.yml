@@ -48,4 +48,11 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          conda run -n test_env python -m pytest -svv -m "integration"
+          conda run -n test_env python -m pytest -svv -m "integration" --cov=heiplanet_data --cov-report=xml:heiplanet_data/coverage_re/coverage.xml
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: ./heiplanet_data/coverage_re/
+          flags: integration
