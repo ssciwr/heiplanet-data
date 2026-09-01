@@ -2,8 +2,7 @@ name: CI Check
 on:
   push:
     branches:
-      - main
-  pull_request:
+      - main  # run only on pushes to the main branch, slow
   workflow_dispatch:
 jobs:
   clean-and-test:
@@ -45,8 +44,8 @@ jobs:
           echo "url: https://cds.climate.copernicus.eu/api" >> ~/.cdsapirc
           echo "key: $SECRET" >> ~/.cdsapirc
 
-      # - name: Execute integration tests
-      #   env: 
-      #     HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
-      #   run: |
-      #     conda run -n test_env python -m pytest -svv -m "integration"
+      - name: Execute integration tests
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          conda run -n test_env python -m pytest -svv -m "integration"

@@ -5,6 +5,8 @@ from typing import Any
 import cdsapi
 import xarray as xr
 from dask.diagnostics.progress import ProgressBar
+from huggingface_hub import HfApi
+from isimip_client.client import ISIMIPClient
 
 from heiplanet_data import temporal
 
@@ -42,6 +44,120 @@ def download_data(
     client = cdsapi.Client()
     client.retrieve(dataset, request, target=str(output_file))
     print(f"Data downloaded successfully to {output_file}")
+
+
+def find_isimip_file(search_path: str, file_match: str) -> tuple[str, str]:
+    """Look up a file in the ISIMIP dataset repository.
+
+    Searches under `search_path` (the same path shown on the ISIMIP website,
+    e.g. "ISIMIP3a/InputData/socioeconomic/pop/histsoc/population") and
+    returns the name and download URL of the first file whose name contains
+    `file_match`. Counterpart to `suggest_filename` for CDS downloads: it
+    only looks up metadata, it does not download anything.
+
+    Args:
+        search_path (str): ISIMIP dataset path to search under.
+        file_match (str): Substring the target file name must contain
+            (e.g. "population_histsoc_30arcmin_annual_1901_2021").
+
+    Returns:
+        Tuple[str, str]: The file name and its download URL.
+
+    Raises:
+        ValueError: If search_path or file_match is not a non-empty string.
+        FileNotFoundError: If no matching file is found on ISIMIP.
+    """
+    if not search_path or not isinstance(search_path, str):
+        raise ValueError("Search path must be a non-empty string.")
+
+    if not file_match or not isinstance(file_match, str):
+        raise ValueError("File match must be a non-empty string.")
+
+    client = ISIMIPClient()
+    response = client.datasets(path=search_path)
+
+    for dataset in response["results"]:
+        for file in dataset["files"]:
+            if file_match in file["name"]:
+                return file["name"], file["file_url"]
+
+    raise FileNotFoundError(
+        f"No ISIMIP file matching '{file_match}' found under '{search_path}'."
+    )
+
+
+def download_isimip_data(output_file: Path, file_url: str, overwrite: bool = False):
+    """Download a data file from ISIMIP using the isimip-client.
+
+    Mirrors `download_data` for CDS downloads: use `find_isimip_file` first
+    to look up `file_url` (and the file name to build `output_file` from).
+
+    Args:
+        output_file (Path): The path to the output file where data will be saved.
+        file_url (str): The download URL of the ISIMIP file, as returned by
+            `find_isimip_file`.
+        overwrite (bool): Whether to overwrite the output file if it already exists.
+            Default is False.
+    """
+    if not output_file:
+        raise ValueError("Output file path must be provided.")
+
+    if not file_url or not isinstance(file_url, str):
+        raise ValueError("File URL must be a non-empty string.")
+
+    if output_file.exists() and not overwrite:
+        raise FileExistsError(
+            f"Output file {output_file} already exists. Set overwrite=True to overwrite."
+        )
+
+    if not output_file.parent.exists():
+        # create the directory if it doesn't exist
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    client = ISIMIPClient()
+    client.download(file_url, path=output_file.parent)
+    print(f"Data downloaded successfully to {output_file}")
+
+
+def upload_to_huggingface(
+    file_path: Path,
+    repo_id: str,
+    path_in_repo: str | None = None,
+    token: str | None = None,
+) -> str:
+    """Upload a single file to a Hugging Face Hub dataset repo.
+
+    Args:
+        file_path (Path): Path to the local file to upload.
+        repo_id (str): Target dataset repo, as "<namespace>/<name>"
+            (e.g. "iulusoy/heiplanet-data-silver").
+        path_in_repo (str | None): Destination path within the repo.
+            Defaults to the file's own name (uploaded to the repo root).
+        token (str | None): Hugging Face access token with write access to
+            `repo_id`. Defaults to None, which uses the `HF_TOKEN`
+            environment variable or a cached `huggingface-cli login`.
+
+    Returns:
+        str: URL of the uploaded file on the Hugging Face Hub.
+    """
+    if not file_path or not Path(file_path).exists():
+        raise ValueError(f"File {file_path} must exist to be uploaded.")
+
+    if not repo_id or not isinstance(repo_id, str):
+        raise ValueError("Repo id must be a non-empty string.")
+
+    path_in_repo = path_in_repo or Path(file_path).name
+
+    api = HfApi(token=token)
+    api.upload_file(
+        path_or_fileobj=str(file_path),
+        path_in_repo=path_in_repo,
+        repo_id=repo_id,
+        repo_type="dataset",
+    )
+    url = f"https://huggingface.co/datasets/{repo_id}/blob/main/{path_in_repo}"
+    print(f"Uploaded {file_path} to {url}")
+    return url
 
 
 def save_to_netcdf(data: xr.DataArray, filename: str, encoding: dict | None = None):
