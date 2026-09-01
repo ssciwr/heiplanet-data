@@ -2,22 +2,32 @@
     "data_format": "netcdf",
     "data_folder": ".data_heiplanet_db/bronze/",
     "data_folder_out": ".data_heiplanet_db/silver/",
-    "dataset": "reanalysis-era5-land-monthly-means",
-    "request": {
-        "product_type": ["monthly_averaged_reanalysis"],
-        "variable": ["2m_temperature"],
-        "year": ["2025"],
-        "month": ["05", "06", "07"],
-        "time": ["00:00"],
-        "data_format": "netcdf",
-        "download_format": "unarchived"
-    },
-    "base_name": "era5_data",
-    "source": "era5",
-    "preprocess_settings": "default",
-    "unique_tag": "silver",
-    "isimip": {
-        "search_path": "ISIMIP3a/InputData/socioeconomic/pop/histsoc/population",
-        "file_match": "population_histsoc_30arcmin_annual_1901_2021"
+    "datasets": {
+        "era5": {
+            "enabled": true,
+            "source": "era5",
+            "base_name": "era5_data",
+            "preprocess_settings": "default",
+            "unique_tag": "silver",
+            "dataset": "reanalysis-era5-land-monthly-means",
+            "request": {
+                "product_type": ["monthly_averaged_reanalysis"],
+                "variable": ["2m_temperature"],
+                "year": ["2025"],
+                "month": ["05", "06", "07"],
+                "time": ["00:00"],
+                "data_format": "netcdf",
+                "download_format": "unarchived"
+            }
+        },
+        "isimip": {
+            "enabled": false,
+            "source": "isimip",
+            "base_name": "isimip_population_data",
+            "preprocess_settings": "default",
+            "unique_tag": "silver",
+            "search_path": "ISIMIP3a/InputData/socioeconomic/pop/histsoc/population",
+            "file_match": "population_histsoc_30arcmin_annual_1901_2021"
+        }
     }
 }

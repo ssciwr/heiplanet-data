@@ -5,7 +5,6 @@ from typing import Any
 import cdsapi
 import xarray as xr
 from dask.diagnostics.progress import ProgressBar
-from huggingface_hub import HfApi
 from isimip_client.client import ISIMIPClient
 
 from heiplanet_data import temporal
@@ -117,47 +116,6 @@ def download_isimip_data(output_file: Path, file_url: str, overwrite: bool = Fal
     client = ISIMIPClient()
     client.download(file_url, path=output_file.parent)
     print(f"Data downloaded successfully to {output_file}")
-
-
-def upload_to_huggingface(
-    file_path: Path,
-    repo_id: str,
-    path_in_repo: str | None = None,
-    token: str | None = None,
-) -> str:
-    """Upload a single file to a Hugging Face Hub dataset repo.
-
-    Args:
-        file_path (Path): Path to the local file to upload.
-        repo_id (str): Target dataset repo, as "<namespace>/<name>"
-            (e.g. "iulusoy/heiplanet-data-silver").
-        path_in_repo (str | None): Destination path within the repo.
-            Defaults to the file's own name (uploaded to the repo root).
-        token (str | None): Hugging Face access token with write access to
-            `repo_id`. Defaults to None, which uses the `HF_TOKEN`
-            environment variable or a cached `huggingface-cli login`.
-
-    Returns:
-        str: URL of the uploaded file on the Hugging Face Hub.
-    """
-    if not file_path or not Path(file_path).exists():
-        raise ValueError(f"File {file_path} must exist to be uploaded.")
-
-    if not repo_id or not isinstance(repo_id, str):
-        raise ValueError("Repo id must be a non-empty string.")
-
-    path_in_repo = path_in_repo or Path(file_path).name
-
-    api = HfApi(token=token)
-    api.upload_file(
-        path_or_fileobj=str(file_path),
-        path_in_repo=path_in_repo,
-        repo_id=repo_id,
-        repo_type="dataset",
-    )
-    url = f"https://huggingface.co/datasets/{repo_id}/blob/main/{path_in_repo}"
-    print(f"Uploaded {file_path} to {url}")
-    return url
 
 
 def save_to_netcdf(data: xr.DataArray, filename: str, encoding: dict | None = None):
