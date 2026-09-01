@@ -1,11 +1,11 @@
-name: CI Check
+name: Integration test
 on:
   push:
     branches:
       - main  # run only on pushes to the main branch, slow
   workflow_dispatch:
 jobs:
-  clean-and-test:
+  integration-test-and-deploy-data:
     runs-on: ubuntu-latest
     strategy:
       matrix:
