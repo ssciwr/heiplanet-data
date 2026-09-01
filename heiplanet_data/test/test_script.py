@@ -18,11 +18,12 @@ available, e.g. for a contributor running integration tests locally without
 one.
 """
 
+import os
 from pathlib import Path
 
 import pytest
 import xarray as xr
-from huggingface_hub import HfApi, get_token
+from huggingface_hub import HfApi
 
 from heiplanet_data import script
 
@@ -52,7 +53,7 @@ def script_config(tmp_path):
                 "dataset": "reanalysis-era5-land-monthly-means",
                 "request": {
                     "product_type": ["monthly_averaged_reanalysis"],
-                    "variable": ["2m_temperature"],
+                    "variable": ["2m_temperature", "total_precipitation"],
                     "year": ["2025"],
                     "month": ["03"],
                     "time": ["00:00"],
@@ -103,11 +104,15 @@ def test_main_downloads_and_preprocesses_era5_and_isimip(script_config, tmp_path
     with (
         xr.open_dataset(processed_files[0]) as ds
     ):  # we need to make sure this is the ERA5-Land dataset, not the ISIMIP population dataset
-        assert ds.attrs["source"] == "era5"
+        assert (
+            ds.attrs["institution"]
+            == "European Centre for Medium-Range Weather Forecasts"
+        )
         # default era5 settings: unify_coords renames valid_time -> time,
         # convert_kelvin_to_celsius keeps the variable name "t2m"
         assert "t2m" in ds.data_vars
         assert "time" in ds.coords
+        assert "tp" in ds.data_vars
     # now the isimip population dataset
     # with xr.open_dataset(processed_files[1]) as ds:
     #     assert ds.attrs["source"] == "isimip"
@@ -128,13 +133,14 @@ def test_main_downloads_and_preprocesses_era5_and_isimip(script_config, tmp_path
     # publish the downloaded and processed data for the next processing
     # component's system integration tests; skip if no token is configured
     # (e.g. running locally without HF credentials)
-    if not get_token():
+    token = get_token()
+    if not token:
         pytest.skip("HF_TOKEN not set; skipping upload to Hugging Face")
 
     upload_to_huggingface(
         folder_path=data_folder_out,
         repo_id=HF_DATASET_REPO,
-        token=get_token(),
+        token=token,
     )
 
 
@@ -172,3 +178,12 @@ def upload_to_huggingface(
     url = f"https://huggingface.co/datasets/{repo_id}/blob/main"
     print(f"Uploaded {folder_path} to {url}")
     return url
+
+
+def get_token() -> str | None:
+    """Get a Hugging Face access token from the environment or cached login.
+
+    Returns:
+        str | None: The token, or None if not found.
+    """
+    return os.environ["HF_TOKEN"]
