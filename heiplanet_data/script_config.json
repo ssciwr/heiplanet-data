@@ -21,7 +21,7 @@
             }
         },
         "isimip": {
-            "enabled": false,
+            "enabled": true,
             "source": "isimip",
             "base_name": "isimip_population_data",
             "preprocess_settings": "default",
