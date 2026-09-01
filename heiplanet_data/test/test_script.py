@@ -34,7 +34,7 @@ pytestmark = pytest.mark.integration
 HF_DATASET_REPO = "iulusoy/heiplanet-data-silver"
 
 
-@pytest.fixture()
+@pytest.fixture
 def script_config(tmp_path):
     data_folder = tmp_path / "bronze"
     data_folder_out = tmp_path / "silver"
