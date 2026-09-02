@@ -45,7 +45,7 @@ def script_config(tmp_path):
         "data_folder_out": str(data_folder_out),
         "datasets": {
             "era5": {
-                "enabled": True,
+                "enabled": False,
                 "source": "era5",
                 "base_name": "era5_data_integration_test",
                 "preprocess_settings": "default",
@@ -54,8 +54,8 @@ def script_config(tmp_path):
                 "request": {
                     "product_type": ["monthly_averaged_reanalysis"],
                     "variable": ["2m_temperature", "total_precipitation"],
-                    "year": ["2010"],
-                    "month": ["05", "06", "07"],
+                    "year": ["2016"],
+                    "month": ["05", "06"],
                     "time": ["00:00"],
                     "data_format": "netcdf",
                     "download_format": "unarchived",
@@ -68,12 +68,12 @@ def script_config(tmp_path):
                 "preprocess_settings": "default",
                 "unique_tag": "integration_test",
                 "dataset": "reanalysis-era5-land",
-                "variable": "total_precipitation",
-                "start_date": "2010-05-02",
-                "end_date": "2010-05-03",
+                "variable": ["2m_temperature", "total_precipitation"],
+                "start_date": "2016-05-02",
+                "end_date": "2016-05-03",
             },
             "isimip": {
-                "enabled": True,
+                "enabled": False,
                 "source": "isimip",
                 "base_name": "isimip_population_data_integration_test",
                 "preprocess_settings": "default",

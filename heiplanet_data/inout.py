@@ -75,7 +75,7 @@ def find_isimip_file(search_path: str, file_match: str) -> tuple[str, str]:
     client = ISIMIPClient()
     response = client.datasets(path=search_path)
 
-    for dataset in response["results"]:
+    for dataset in response:
         for file in dataset["files"]:
             if file_match in file["name"]:
                 return file["name"], file["file_url"]
@@ -507,7 +507,7 @@ def _download_sub_tp_data(
     file_name: str,
     file_ext: str,
     ds_name: str,
-    var_name: str,
+    var_name: str | list[str],
     coord_name: str,
     data_format: str,
 ) -> Path:
@@ -538,7 +538,7 @@ def _download_sub_tp_data(
 
     # build CDS request
     request = {
-        "variable": [var_name],
+        "variable": [var_name] if isinstance(var_name, str) else var_name,
         "year": years,
         "month": months,
         "day": days,
@@ -604,7 +604,7 @@ def download_total_precipitation_from_hourly_era5_land(
     data_format: str = "netcdf",
     ds_name: str = "reanalysis-era5-land",
     coord_name: str = "valid_time",
-    var_name: str = "total_precipitation",
+    var_name: str | list[str] = "total_precipitation",
     clean_tmp_files: bool = False,
 ) -> str:
     """Download total precipitation data from hourly ERA5-Land dataset.

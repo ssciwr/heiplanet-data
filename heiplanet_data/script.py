@@ -104,7 +104,12 @@ def _run_era5_daily(
         # days-in-month to turn a monthly *mean* into a monthly *total* -
         # daily data is already a daily total, and its dates aren't month
         # starts, so that step must stay off here.
-        new_settings={"output_dir": str(data_folder_out), "cal_monthly_tp": False},
+        new_settings={
+            "output_dir": str(data_folder_out),
+            "cal_monthly_tp": False,
+            "resample_grid": True,
+            "resample_grid_vname": ["latitude", "longitude"],
+        },
         unique_tag=era5_daily_config["unique_tag"],
     )
     t_preprocess = time.time()
