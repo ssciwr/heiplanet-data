@@ -2,7 +2,7 @@
     "output_dir": "processed",
     "truncate_date": true,
     "truncate_date_from": "2016-01-01",
-    "truncate_date_to": "2017-12-31",
+    "truncate_date_to": "2016-12-31",
     "truncate_date_vname": "time",
     "unify_coords": true,
     "unify_coords_fname": "unicoords",

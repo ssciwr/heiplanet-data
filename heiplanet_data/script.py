@@ -6,6 +6,7 @@ from heiplanet_data import preprocess_data_file, utils
 from heiplanet_data.inout import (
     download_data,
     download_isimip_data,
+    download_total_precipitation_from_hourly_era5_land,
     find_isimip_file,
     suggest_filename,
 )
@@ -60,6 +61,57 @@ def _run_era5(
     print(f"Name of preprocessed file: {era5_pfname}")
 
 
+def _run_era5_daily(
+    era5_daily_config: dict[str, Any],
+    data_format: str,
+    data_folder: Path,
+    data_folder_out: Path,
+) -> None:
+    """Download and preprocess the daily ERA5-Land total precipitation dataset.
+
+    Unlike `_run_era5`, this pulls from the hourly `reanalysis-era5-land`
+    dataset via `download_total_precipitation_from_hourly_era5_land`, which
+    takes a `start_date`/`end_date` range rather than year/month lists (the
+    monthly-means product used by `era5` has no daily equivalent on CDS).
+
+    Args:
+        era5_daily_config (Dict[str, Any]): The `datasets.era5_daily` block
+            of the script config.
+        data_format (str): Data format shared across datasets (e.g. "netcdf").
+        data_folder (Path): Folder raw data is downloaded to.
+        data_folder_out (Path): Folder preprocessed data is written to.
+    """
+    output_file = Path(
+        download_total_precipitation_from_hourly_era5_land(
+            start_date=era5_daily_config["start_date"],
+            end_date=era5_daily_config["end_date"],
+            area=era5_daily_config.get("area"),
+            out_dir=data_folder,
+            base_name=era5_daily_config["base_name"],
+            data_format=data_format,
+            ds_name=era5_daily_config["dataset"],
+            var_name=era5_daily_config.get("variable", "total_precipitation"),
+        )
+    )
+
+    print(f"Preprocessing ERA5-Land daily data: {output_file}")
+    t0 = time.time()
+    _, era5_daily_pfname = preprocess_data_file(
+        netcdf_file=output_file,
+        source=era5_daily_config["source"],
+        settings=era5_daily_config["preprocess_settings"],
+        # the default era5 settings' cal_monthly_tp step scales tp by
+        # days-in-month to turn a monthly *mean* into a monthly *total* -
+        # daily data is already a daily total, and its dates aren't month
+        # starts, so that step must stay off here.
+        new_settings={"output_dir": str(data_folder_out), "cal_monthly_tp": False},
+        unique_tag=era5_daily_config["unique_tag"],
+    )
+    t_preprocess = time.time()
+    print(f"Preprocessing completed in {t_preprocess - t0:.2f} seconds.")
+    print(f"Name of preprocessed file: {era5_daily_pfname}")
+
+
 def _run_isimip(
     isimip_config: dict[str, Any], data_folder: Path, data_folder_out: Path
 ) -> None:
@@ -99,13 +151,14 @@ def _run_isimip(
 
 def main(config: dict[str, Any] | None = None) -> None:
     """Download and preprocess the datasets enabled in `config["datasets"]`
-    (ERA5-Land and/or ISIMIP population data).
+    (ERA5-Land monthly and daily, and/or ISIMIP population data).
 
-    Each entry under `config["datasets"]` (currently "era5" and "isimip")
-    shares the same shape: `enabled`, `source`, `base_name`,
+    Each entry under `config["datasets"]` (currently "era5", "era5_daily"
+    and "isimip") shares a common shape: `enabled`, `source`, `base_name`,
     `preprocess_settings`, `unique_tag`, plus dataset-specific download
-    parameters (`dataset`/`request` for era5, `search_path`/`file_match` for
-    isimip). Set `enabled` to `false` (or omit the entry) to skip a dataset.
+    parameters (`dataset`/`request` for era5, `dataset`/`start_date`/
+    `end_date` for era5_daily, `search_path`/`file_match` for isimip). Set
+    `enabled` to `false` (or omit the entry) to skip a dataset.
 
     Args:
         config (Dict[str, Any] | None): User-configurable variables, in the
@@ -126,6 +179,12 @@ def main(config: dict[str, Any] | None = None) -> None:
         _run_era5(era5_config, data_format, data_folder, data_folder_out)
     else:
         print("Skipping ERA5-Land dataset (disabled in config).")
+
+    era5_daily_config = datasets.get("era5_daily")
+    if era5_daily_config and era5_daily_config.get("enabled", True):
+        _run_era5_daily(era5_daily_config, data_format, data_folder, data_folder_out)
+    else:
+        print("Skipping ERA5-Land daily dataset (disabled in config).")
 
     isimip_config = datasets.get("isimip")
     if isimip_config and isimip_config.get("enabled", True):

@@ -13,12 +13,23 @@
             "request": {
                 "product_type": ["monthly_averaged_reanalysis"],
                 "variable": ["2m_temperature"],
-                "year": ["2025"],
+                "year": ["2016"],
                 "month": ["05", "06", "07"],
                 "time": ["00:00"],
                 "data_format": "netcdf",
                 "download_format": "unarchived"
             }
+        },
+        "era5_daily": {
+            "enabled": true,
+            "source": "era5",
+            "base_name": "era5_data_daily",
+            "preprocess_settings": "default",
+            "unique_tag": "silver",
+            "dataset": "reanalysis-era5-land",
+            "variable": "total_precipitation",
+            "start_date": "2016-05-02",
+            "end_date": "2016-08-01"
         },
         "isimip": {
             "enabled": true,

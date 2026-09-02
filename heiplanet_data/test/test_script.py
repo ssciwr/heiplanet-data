@@ -54,14 +54,23 @@ def script_config(tmp_path):
                 "request": {
                     "product_type": ["monthly_averaged_reanalysis"],
                     "variable": ["2m_temperature", "total_precipitation"],
-                    "year": ["2025"],
-                    "month": ["03"],
+                    "year": ["2010"],
+                    "month": ["05", "06", "07"],
                     "time": ["00:00"],
                     "data_format": "netcdf",
                     "download_format": "unarchived",
-                    # small area to keep the download light, as in test_inout.py
-                    "area": [0, -1, 0, 1],  # [N, W, S, E]
                 },
+            },
+            "era5_daily": {
+                "enabled": True,
+                "source": "era5",
+                "base_name": "era5_data_daily_integration_test",
+                "preprocess_settings": "default",
+                "unique_tag": "integration_test",
+                "dataset": "reanalysis-era5-land",
+                "variable": "total_precipitation",
+                "start_date": "2010-05-02",
+                "end_date": "2010-05-03",
             },
             "isimip": {
                 "enabled": True,
@@ -83,12 +92,18 @@ def test_main_downloads_and_preprocesses_era5_and_isimip(script_config, tmp_path
     script.main(script_config)
 
     era5_config = script_config["datasets"]["era5"]
+    era5_daily_config = script_config["datasets"]["era5_daily"]
     isimip_config = script_config["datasets"]["isimip"]
 
     # ERA5-Land raw data was downloaded
     raw_files = list(data_folder.glob(f"{era5_config['base_name']}*.nc"))
     assert len(raw_files) == 1
     raw_mtime = raw_files[0].stat().st_mtime
+
+    # ERA5-Land daily raw data was downloaded
+    era5_daily_files = list(data_folder.glob(f"{era5_daily_config['base_name']}*.nc"))
+    assert len(era5_daily_files) == 2
+    era5_daily_mtime = era5_daily_files[0].stat().st_mtime
 
     # ISIMIP population data was downloaded alongside the ERA5-Land data
     isimip_files = list(data_folder.glob(f"{isimip_config['file_match']}*.nc"))
@@ -100,10 +115,20 @@ def test_main_downloads_and_preprocesses_era5_and_isimip(script_config, tmp_path
     processed_files.sort(
         key=lambda f: f.name
     )  # ensure consistent order for the next assertions
-    assert len(processed_files) == 2
-    with (
-        xr.open_dataset(processed_files[0]) as ds
-    ):  # we need to make sure this is the ERA5-Land dataset, not the ISIMIP population dataset
+    assert len(processed_files) == 3
+    # "era5_data_daily_..." sorts before "era5_data_..." (monthly) which
+    # sorts before "isimip_population_..."
+    with xr.open_dataset(processed_files[0]) as ds:  # ERA5-Land daily dataset
+        assert (
+            ds.attrs["institution"]
+            == "European Centre for Medium-Range Weather Forecasts"
+        )
+        # default era5 settings: unify_coords renames valid_time -> time
+        assert "tp" in ds.data_vars
+        assert "time" in ds.coords
+    with xr.open_dataset(
+        processed_files[1]
+    ) as ds:  # ERA5-Land monthly dataset, not the ISIMIP population dataset
         assert (
             ds.attrs["institution"]
             == "European Centre for Medium-Range Weather Forecasts"
@@ -114,7 +139,7 @@ def test_main_downloads_and_preprocesses_era5_and_isimip(script_config, tmp_path
         assert "time" in ds.coords
         assert "tp" in ds.data_vars
     # now the isimip population dataset
-    with xr.open_dataset(processed_files[1]) as ds:
+    with xr.open_dataset(processed_files[2]) as ds:
         assert ds.attrs["title"] == "ISIMIP3b histsoc population data"
         # default isimip settings: unify_coords renames valid_time -> time,
         # convert_kelvin_to_celsius keeps the variable name "population"
@@ -128,6 +153,7 @@ def test_main_downloads_and_preprocesses_era5_and_isimip(script_config, tmp_path
 
     script.main(script_config)
     assert raw_files[0].stat().st_mtime == raw_mtime
+    assert era5_daily_files[0].stat().st_mtime == era5_daily_mtime
     assert isimip_files[0].stat().st_mtime == isimip_mtime
 
     # publish the downloaded and processed data for the next processing
