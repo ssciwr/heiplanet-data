@@ -4,7 +4,7 @@
     "data_folder_out": ".data_heiplanet_db/silver/",
     "datasets": {
         "era5": {
-            "enabled": true,
+            "enabled": false,
             "source": "era5",
             "base_name": "era5_data",
             "preprocess_settings": "default",
@@ -13,8 +13,8 @@
             "request": {
                 "product_type": ["monthly_averaged_reanalysis"],
                 "variable": ["2m_temperature"],
-                "year": ["2016"],
-                "month": ["05", "06", "07"],
+                "year": ["2024"],
+                "month": ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"],
                 "time": ["00:00"],
                 "data_format": "netcdf",
                 "download_format": "unarchived"
@@ -27,9 +27,9 @@
             "preprocess_settings": "default",
             "unique_tag": "silver",
             "dataset": "reanalysis-era5-land",
-            "variable": "total_precipitation",
-            "start_date": "2016-05-02",
-            "end_date": "2016-08-01"
+            "variable": ["2m_temperature", "total_precipitation"],
+            "start_date": "2024-01-02",
+            "end_date": "2025-01-01"
         },
         "isimip": {
             "enabled": true,
