@@ -13,6 +13,7 @@ DEFAULT_SETTINGS_FILE = {
     "era5": Path(pkg / "era5_settings.json"),
     "isimip": Path(pkg / "isimip_settings.json"),
 }
+DEFAULT_SCRIPT_CONFIG_FILE = Path(pkg / "script_config.json")
 
 
 def is_non_empty_file(file_path: Path) -> bool:
@@ -184,6 +185,30 @@ def load_settings(
         _update_new_settings(settings, new_settings)
 
     return settings, settings_fname
+
+
+def load_script_config(config_path: Path | str = "default") -> dict[str, Any]:
+    """Load user-configurable variables for the example scripts
+    (e.g. `script.py`), such as the download request and data folders.
+    If config_path is "default", load the packaged `script_config.json`.
+    Otherwise, read the config from the given file path.
+
+    Args:
+        config_path (Path | str): Path to the config file, or "default"
+            to use the packaged default config. Defaults to "default".
+
+    Returns:
+        Dict[str, Any]: The script config.
+    """
+    config_file = (
+        DEFAULT_SCRIPT_CONFIG_FILE if config_path == "default" else Path(config_path)
+    )
+
+    if not is_non_empty_file(config_file):
+        raise ValueError(f"Script config file {config_file} not found or is empty.")
+
+    with open(config_file, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def generate_unique_tag() -> str:
