@@ -630,9 +630,8 @@ def download_total_precipitation_from_hourly_era5_land(
         coord_name (str): Name of the time coordinate in the dataset.
             Default is "valid_time".
             Only modify this if CDS changes the name of the coordinate.
-        var_name (str): Name of the data variable.
+        var_name (str|list(str)): Name of the data variable.
             Default is "total_precipitation".
-            Only modify this if CDS changes the name of the variable.
         clean_tmp_files (bool): Flag to indicate if temporary files should be deleted
             after processing. Default is False.
 
@@ -652,7 +651,11 @@ def download_total_precipitation_from_hourly_era5_land(
     has_area = area is not None
     file_ext = _file_extension(data_format)
     area_str = _add_prefix_if_not_empty(_area_format(has_area))
-    file_name = f"{base_name}_{start_date}-{end_date}_midnight_tp_daily{area_str}_raw"
+    if isinstance(var_name, list):
+        var_name_str = "_".join(var_name)
+    else:
+        var_name_str = var_name
+    file_name = f"{base_name}_{start_date}-{end_date}_midnight_{var_name_str}_daily{area_str}_raw"
     output_file_name = f"{file_name}.{file_ext}"
     output_file_path = out_dir / output_file_name
 
@@ -671,6 +674,7 @@ def download_total_precipitation_from_hourly_era5_land(
     tmp_files = []
     for i, range in enumerate(ranges):
         print(f"Downloading data for range {i}: from {range[0]} to {range[1]} ...")
+        print(f"Download variables: {var_name}")
         tmp_file_path = _download_sub_tp_data(
             date_range=range,
             range_idx=i,

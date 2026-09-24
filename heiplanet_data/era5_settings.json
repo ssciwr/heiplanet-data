@@ -9,7 +9,7 @@
     "convert_m_to_mm_precipitation": true,
     "convert_m_to_mm_precipitation_vname": "tp",
     "convert_m_to_mm_precipitation_fname": "mm",
-    "resample_grid": false,
+    "resample_grid": true,
     "resample_degree": 0.5,
     "resample_grid_vname": ["latitude", "longitude"],
     "resample_grid_fname": "deg_trim",
@@ -18,7 +18,7 @@
     "uni_coords": {
         "valid_time": "time"
     },
-    "cal_monthly_tp": true,
+    "cal_monthly_tp": false,
     "cal_monthly_tp_vname": "tp",
     "cal_monthly_tp_tcoord": "time",
     "cal_monthly_tp_fname": "montp"
