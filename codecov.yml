@@ -1,6 +1,16 @@
 codecov:
   require_ci_to_pass: true
 
+flags:
+  unit:
+    paths:
+      - heiplanet_data/
+    carryforward: false
+  integration:
+    paths:
+      - heiplanet_data/
+    carryforward: true
+
 coverage:
   status:
     project:
