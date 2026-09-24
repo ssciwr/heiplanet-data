@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime
 from importlib import resources
 from pathlib import Path
@@ -291,7 +292,7 @@ def test_apply_preprocessing_truncate_fill(get_dataset):
     assert updated_fname == f"{fname_base}_2026-2026"
 
 
-def test_apply_preprocessing_pop_density(get_dataset):
+def test_apply_preprocessing_pop_density(get_dataset, caplog):
     fname_base = "test_data"
     settings = {
         "cal_pop_density": True,
@@ -307,13 +308,16 @@ def test_apply_preprocessing_pop_density(get_dataset):
     assert preprocessed_dataset["tp-density"].attrs["units"] == "km-2"
     assert updated_fname == f"{fname_base}_popdens"
 
-    # missing variable: step is skipped
-    settings["cal_pop_density_vname"] = ["total-population"]
-    preprocessed_dataset, updated_fname = pipeline._apply_preprocessing(
-        get_dataset.copy(), fname_base, settings=settings
-    )
-    assert "total-population-density" not in preprocessed_dataset.data_vars
+    # missing variable: step is skipped with a warning
+    settings["cal_pop_density_vname"] = ["tp", "total-population"]
+    with caplog.at_level(logging.WARNING, logger="heiplanet_data.pipeline"):
+        preprocessed_dataset, updated_fname = pipeline._apply_preprocessing(
+            get_dataset.copy(), fname_base, settings=settings
+        )
+    assert "tp-density" not in preprocessed_dataset.data_vars
     assert updated_fname == fname_base
+    assert "Skipping population density" in caplog.text
+    assert "total-population" in caplog.text
 
 
 def test_apply_preprocessing_pop_density_area_file(tmp_path, get_dataset):

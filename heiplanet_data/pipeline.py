@@ -309,14 +309,20 @@ def _step_cal_pop_density(
     ds: xr.Dataset, fname_base: str, s: dict[str, Any], logger: logging.Logger
 ) -> tuple[xr.Dataset, str]:
     """Calculate population density (persons per km^2) from population counts."""
+    if not s.get("cal_pop_density", False):
+        return ds, fname_base
+
     vnames = s.get("cal_pop_density_vname") or []
     lat_name, lon_name = s.get("cal_pop_density_coords", ["latitude", "longitude"])
-    present = (
-        bool(vnames)
-        and all(vname in ds.data_vars for vname in vnames)
-        and all((lat_name in ds.coords, lon_name in ds.coords))
-    )
-    if not (s.get("cal_pop_density", False) and present):
+    missing = [vname for vname in vnames if vname not in ds.data_vars] + [
+        coord for coord in (lat_name, lon_name) if coord not in ds.coords
+    ]
+    if not vnames or missing:
+        # the step is enabled by default for ISIMIP data, so do not skip silently
+        logger.warning(
+            "Skipping population density calculation: "
+            f"missing variables or coordinates {missing or 'cal_pop_density_vname'}."
+        )
         return ds, fname_base
 
     logger.info("Calculating population density = population / grid-cell area...")
