@@ -241,6 +241,24 @@ def test_truncate_data_by_time_fill_to_end(get_dataset):
     assert filled_dataset["static"].dims == ("latitude", "longitude")
 
 
+def test_truncate_data_by_time_fill_after_data_end(get_dataset):
+    # start date after the last available year (2025): only filled years
+    filled_dataset = temporal.truncate_data_by_time(
+        get_dataset,
+        start_date="2026-01-01",
+        end_date="2027-12-31",
+        var_name="time",
+        fill_to_end=True,
+    )
+    expected_times = np.array(["2026-01-01", "2027-01-01"], dtype="datetime64[ns]")
+    assert np.array_equal(filled_dataset["time"].values, expected_times)
+    for i in (0, 1):
+        assert np.allclose(
+            filled_dataset["t2m"].isel(time=i).values,
+            get_dataset["t2m"].isel(time=1).values,
+        )
+
+
 def test_truncate_data_by_time_fill_to_end_no_change(get_dataset):
     # end date before the next year: nothing to fill
     filled_dataset = temporal.truncate_data_by_time(

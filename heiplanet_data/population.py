@@ -179,7 +179,10 @@ def calculate_population_density(
 
     for name in var_names:
         count = dataset[name]
-        density = (count / area).astype(count.dtype)
+        density = count / area
+        if np.issubdtype(count.dtype, np.floating):
+            # keep the precision of the counts, e.g. float32 for ISIMIP data
+            density = density.astype(count.dtype)
         density.attrs = {
             "standard_name": f"{count.attrs.get('standard_name', name)} density",
             "long_name": f"{count.attrs.get('long_name', name)} density",

@@ -171,10 +171,11 @@ def truncate_data_by_time(
             "The start date must be earlier than or equal to the end date."
         )
 
-    truncated = dataset.sel({var_name: slice(start_date, end_date)})
-    if fill_to_end and truncated.sizes[var_name] > 0:
-        truncated = _fill_years_to_end_date(truncated, end_date, var_name)
-    return truncated
+    # fill before truncating, so a start date after the last available year
+    # still gets the filled years
+    if fill_to_end:
+        dataset = _fill_years_to_end_date(dataset, end_date, var_name)
+    return dataset.sel({var_name: slice(start_date, end_date)})
 
 
 def _check_month_start_data(times: xr.DataArray) -> bool:

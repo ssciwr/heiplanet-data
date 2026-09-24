@@ -139,6 +139,23 @@ def test_calculate_population_density(get_popu_dataset):
     assert density.isel(latitude=0).isnull().all()
 
 
+def test_calculate_population_density_integer_counts(get_popu_dataset):
+    counts = xr.full_like(
+        get_popu_dataset["total-population"].fillna(0), 1, dtype=np.int32
+    )
+    dataset = xr.Dataset({"total-population": counts})
+    area = population.calculate_grid_cell_area(dataset)
+    dataset = population.calculate_population_density(
+        dataset, ["total-population"], area
+    )
+
+    density = dataset["total-population-density"]
+    # densities below 1 person per km2 are not truncated to 0
+    assert np.issubdtype(density.dtype, np.floating)
+    assert (density > 0).all()
+    assert np.allclose(density.values, 1 / area.values)
+
+
 def test_calculate_population_density_invalid(get_popu_dataset):
     area = population.calculate_grid_cell_area(get_popu_dataset)
     with pytest.raises(ValueError):

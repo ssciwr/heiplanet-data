@@ -282,6 +282,14 @@ def test_apply_preprocessing_truncate_fill(get_dataset):
     )
     assert updated_fname == f"{fname_base}_2024-2026"
 
+    # start date after the last available year
+    settings["truncate_date_from"] = "2026-01-01"
+    preprocessed_dataset, updated_fname = pipeline._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+    assert len(preprocessed_dataset["t2m"].time) == 1
+    assert updated_fname == f"{fname_base}_2026-2026"
+
 
 def test_apply_preprocessing_pop_density(get_dataset):
     fname_base = "test_data"
