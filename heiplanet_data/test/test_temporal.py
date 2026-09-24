@@ -206,3 +206,73 @@ def test_calculate_monthly_precipitation(get_dataset):
         monthly_dataset["tp"].values,
         expected_tp,
     )
+
+
+def test_truncate_data_by_time_fill_to_end(get_dataset):
+    # data end 2025-01-01, fill up to 2027
+    get_dataset["static"] = get_dataset["t2m"].isel(time=0, drop=True)
+    filled_dataset = temporal.truncate_data_by_time(
+        get_dataset,
+        start_date="2024-01-01",
+        end_date="2027-12-31",
+        var_name="time",
+        fill_to_end=True,
+    )
+
+    expected_times = np.array(
+        ["2024-01-01", "2025-01-01", "2026-01-01", "2027-01-01"],
+        dtype="datetime64[ns]",
+    )
+    assert np.array_equal(filled_dataset["time"].values, expected_times)
+
+    # filled years repeat the last available year
+    last_year = get_dataset["t2m"].isel(time=1).values
+    for i in (2, 3):
+        assert np.allclose(filled_dataset["t2m"].isel(time=i).values, last_year)
+        assert np.allclose(
+            filled_dataset["tp"].isel(time=i).values,
+            get_dataset["tp"].isel(time=1).values,
+        )
+    assert "2025 repeated for 2026-2027" in filled_dataset.attrs["time_fill"]
+    assert filled_dataset.attrs["GRIB_centre"] == "ecmf"
+    assert filled_dataset["t2m"].attrs == get_dataset["t2m"].attrs
+
+    # variables without time dimension are not expanded
+    assert filled_dataset["static"].dims == ("latitude", "longitude")
+
+
+def test_truncate_data_by_time_fill_after_data_end(get_dataset):
+    # start date after the last available year (2025): only filled years
+    filled_dataset = temporal.truncate_data_by_time(
+        get_dataset,
+        start_date="2026-01-01",
+        end_date="2027-12-31",
+        var_name="time",
+        fill_to_end=True,
+    )
+    expected_times = np.array(["2026-01-01", "2027-01-01"], dtype="datetime64[ns]")
+    assert np.array_equal(filled_dataset["time"].values, expected_times)
+    for i in (0, 1):
+        assert np.allclose(
+            filled_dataset["t2m"].isel(time=i).values,
+            get_dataset["t2m"].isel(time=1).values,
+        )
+
+
+def test_truncate_data_by_time_fill_to_end_no_change(get_dataset):
+    # end date before the next year: nothing to fill
+    filled_dataset = temporal.truncate_data_by_time(
+        get_dataset,
+        start_date="2024-01-01",
+        end_date="2025-12-31",
+        var_name="time",
+        fill_to_end=True,
+    )
+    assert len(filled_dataset["time"]) == 2
+    assert "time_fill" not in filled_dataset.attrs
+
+    # default: no filling beyond the data
+    truncated_dataset = temporal.truncate_data_by_time(
+        get_dataset, start_date="2024-01-01", end_date="2027-12-31", var_name="time"
+    )
+    assert len(truncated_dataset["time"]) == 2

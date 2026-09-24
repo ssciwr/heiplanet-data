@@ -1,8 +1,8 @@
 """Preprocessing step registry and pipeline orchestration.
 
 This module wires the individual transformations from
-`heiplanet_data.converters`, `heiplanet_data.regrid`, and
-`heiplanet_data.temporal` into a settings-driven pipeline:
+`heiplanet_data.converters`, `heiplanet_data.regrid`,
+`heiplanet_data.temporal`, and `heiplanet_data.population` into a settings-driven pipeline:
 
 * each preprocessing step is a small wrapper function registered with the
   `register_step` decorator and an explicit ``order`` value that fixes the
@@ -32,6 +32,11 @@ from heiplanet_data.converters import (
     convert_m_to_mm_with_attributes,
     convert_to_celsius_with_attributes,
     rename_coords,
+)
+from heiplanet_data.population import (
+    calculate_grid_cell_area,
+    calculate_population_density,
+    load_grid_cell_area,
 )
 from heiplanet_data.regrid import (
     GridConfig,
@@ -288,6 +293,7 @@ def _step_truncate_date(
         start_date=truncate_date_from,
         end_date=truncate_date_to,
         var_name=truncate_date_vname,
+        fill_to_end=s.get("truncate_date_fill", False),
     )
 
     min_year = truncate_date_from[:4]
@@ -295,6 +301,38 @@ def _step_truncate_date(
     end_date = truncate_date_to or max_time
     max_year = np.datetime64(end_date, "Y")
     fname_base += f"_{min_year}-{max_year}"
+    return ds, fname_base
+
+
+@register_step("cal_pop_density", order=70)
+def _step_cal_pop_density(
+    ds: xr.Dataset, fname_base: str, s: dict[str, Any], logger: logging.Logger
+) -> tuple[xr.Dataset, str]:
+    """Calculate population density (persons per km^2) from population counts."""
+    if not s.get("cal_pop_density", False):
+        return ds, fname_base
+
+    vnames = s.get("cal_pop_density_vname") or []
+    lat_name, lon_name = s.get("cal_pop_density_coords", ["latitude", "longitude"])
+    missing = [vname for vname in vnames if vname not in ds.data_vars] + [
+        coord for coord in (lat_name, lon_name) if coord not in ds.coords
+    ]
+    if not vnames or missing:
+        # the step is enabled by default for ISIMIP data, so do not skip silently
+        logger.warning(
+            "Skipping population density calculation: "
+            f"missing variables or coordinates {missing or 'cal_pop_density_vname'}."
+        )
+        return ds, fname_base
+
+    logger.info("Calculating population density = population / grid-cell area...")
+    area_file = s.get("cal_pop_density_area_file")
+    if area_file:
+        area = load_grid_cell_area(area_file, ds, lat_name=lat_name, lon_name=lon_name)
+    else:
+        area = calculate_grid_cell_area(ds, lat_name=lat_name, lon_name=lon_name)
+    ds = calculate_population_density(ds, var_names=vnames, area=area)
+    fname_base += f"_{s.get('cal_pop_density_fname')}"
     return ds, fname_base
 
 

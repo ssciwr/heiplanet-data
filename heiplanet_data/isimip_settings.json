@@ -4,10 +4,21 @@
     "truncate_date_from": "2016-01-01",
     "truncate_date_to": "2017-12-31",
     "truncate_date_vname": "time",
+    "truncate_date_fill": false,
     "unify_coords": true,
     "unify_coords_fname": "unicoords",
     "uni_coords": {
         "lat": "latitude",
         "lon": "longitude"
-    }
+    },
+    "cal_pop_density": true,
+    "cal_pop_density_vname": [
+        "total-population"
+    ],
+    "cal_pop_density_coords": [
+        "latitude",
+        "longitude"
+    ],
+    "cal_pop_density_area_file": null,
+    "cal_pop_density_fname": "popdens"
 }
