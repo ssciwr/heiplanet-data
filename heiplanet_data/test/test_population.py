@@ -6,7 +6,7 @@ from cdo import Cdo
 from heiplanet_data import population
 
 
-@pytest.fixture()
+@pytest.fixture
 def get_popu_dataset():
     # global 10 degree grid, cell centers, latitude descending as in ISIMIP data
     latitude = np.arange(85.0, -90.0, -10.0)
@@ -104,13 +104,11 @@ def test_load_grid_cell_area_invalid(tmp_path, get_popu_dataset):
         population.load_grid_cell_area(area_file, get_popu_dataset, var_name="area")
 
     # grid does not match
+    mismatched_dataset = get_popu_dataset.isel(latitude=slice(0, 5)).assign_coords(
+        latitude=np.arange(5.0) + 0.3
+    )
     with pytest.raises(ValueError):
-        population.load_grid_cell_area(
-            area_file,
-            get_popu_dataset.isel(latitude=slice(0, 5)).assign_coords(
-                latitude=np.arange(5.0) + 0.3
-            ),
-        )
+        population.load_grid_cell_area(area_file, mismatched_dataset)
 
     bad_units = area.copy()
     bad_units.attrs["units"] = "ha"
