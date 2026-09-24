@@ -262,6 +262,75 @@ def test_apply_preprocessing_truncate(get_dataset):
     assert updated_fname == f"{fname_base}_2025-2025"
 
 
+def test_apply_preprocessing_truncate_fill(get_dataset):
+    fname_base = "test_data"
+    settings = {
+        "truncate_date": True,
+        "truncate_date_from": "2024-01-01",
+        "truncate_date_to": "2026-12-31",
+        "truncate_date_vname": "time",
+        "truncate_date_fill": True,
+    }
+    preprocessed_dataset, updated_fname = pipeline._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    assert len(preprocessed_dataset["t2m"].time) == 3
+    assert np.allclose(
+        preprocessed_dataset["t2m"].isel(time=2).values,
+        get_dataset["t2m"].isel(time=1).values,
+    )
+    assert updated_fname == f"{fname_base}_2024-2026"
+
+
+def test_apply_preprocessing_pop_density(get_dataset):
+    fname_base = "test_data"
+    settings = {
+        "cal_pop_density": True,
+        "cal_pop_density_vname": ["tp"],
+        "cal_pop_density_coords": ["latitude", "longitude"],
+        "cal_pop_density_fname": "popdens",
+    }
+    preprocessed_dataset, updated_fname = pipeline._apply_preprocessing(
+        get_dataset.copy(), fname_base, settings=settings
+    )
+
+    assert "tp-density" in preprocessed_dataset.data_vars
+    assert preprocessed_dataset["tp-density"].attrs["units"] == "km-2"
+    assert updated_fname == f"{fname_base}_popdens"
+
+    # missing variable: step is skipped
+    settings["cal_pop_density_vname"] = ["total-population"]
+    preprocessed_dataset, updated_fname = pipeline._apply_preprocessing(
+        get_dataset.copy(), fname_base, settings=settings
+    )
+    assert "total-population-density" not in preprocessed_dataset.data_vars
+    assert updated_fname == fname_base
+
+
+def test_apply_preprocessing_pop_density_area_file(tmp_path, get_dataset):
+    fname_base = "test_data"
+    area = xr.full_like(get_dataset["tp"].isel(time=0, drop=True), 2.0)
+    area.name = "cell_area"
+    area.attrs = {"units": "km2"}
+    area_file = tmp_path / "area.nc"
+    area.to_netcdf(area_file)
+
+    settings = {
+        "cal_pop_density": True,
+        "cal_pop_density_vname": ["tp"],
+        "cal_pop_density_coords": ["latitude", "longitude"],
+        "cal_pop_density_area_file": str(area_file),
+        "cal_pop_density_fname": "popdens",
+    }
+    preprocessed_dataset, _ = pipeline._apply_preprocessing(
+        get_dataset.copy(), fname_base, settings=settings
+    )
+    assert np.allclose(
+        preprocessed_dataset["tp-density"].values, get_dataset["tp"].values / 2.0
+    )
+
+
 def test_apply_preprocessing_calculate_monthly_precipitation(get_dataset):
     fname_base = "test_data"
 
@@ -593,7 +662,8 @@ def test_registered_steps_have_schema_entries():
     have a matching enable-flag property in ``setting_schema.json``, so a newly
     added step cannot silently drift from its configuration schema. Conversely,
     every boolean enable-flag in the schema must have a registered step, so a
-    flag cannot be added to the schema without wiring up its step. Also check
+    flag cannot be added to the schema without wiring up its step (boolean
+    options prefixed with a step name belong to that step). Also check
     that step order values are unique, keeping the execution sequence
     deterministic.
     """
@@ -612,7 +682,12 @@ def test_registered_steps_have_schema_entries():
     missing = step_names - schema_props
     assert not missing, f"registered steps missing from schema: {sorted(missing)}"
 
-    orphan_flags = schema_flags - step_names
+    # boolean sub-options of a step (e.g. ``truncate_date_fill``) are not flags
+    orphan_flags = {
+        flag
+        for flag in schema_flags - step_names
+        if not any(flag.startswith(f"{name}_") for name in step_names)
+    }
     assert not orphan_flags, (
         f"schema enable-flags without a registered step: {sorted(orphan_flags)}"
     )

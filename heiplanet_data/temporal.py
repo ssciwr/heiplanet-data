@@ -4,6 +4,8 @@ This module manipulates the time coordinate of a dataset:
 
 * shifting all time points by a fixed offset (`shift_time`),
 * truncating a dataset to a date range (`truncate_data_by_time`),
+  optionally filling annual data up to the end date with the last
+  available year,
 * converting ERA5-Land monthly mean precipitation to monthly totals by
   multiplying with the number of days per month
   (`calculate_monthly_precipitation`).
@@ -13,6 +15,7 @@ import re
 from typing import Literal
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 
 
@@ -78,11 +81,60 @@ def _parse_date(date: str | np.datetime64 | None) -> np.datetime64 | None:
     return date
 
 
+def _fill_years_to_end_date(
+    dataset: xr.Dataset, end_date: np.datetime64, var_name: str = "time"
+) -> xr.Dataset:
+    """Repeat the last time step once per year until the end date is reached.
+
+    The appended time steps keep the month, day and time of day of the last
+    time step, e.g. data ending 2021-01-01 are filled with 2022-01-01,
+    2023-01-01 and 2024-01-01 for an end date of 2024-12-31.
+
+    Args:
+        dataset (xr.Dataset): Dataset with annual time steps.
+        end_date (np.datetime64): Last date (inclusive) to fill up to.
+        var_name (str): Name of the time coordinate. Default is "time".
+
+    Returns:
+        xr.Dataset: Dataset with the filled time steps appended.
+    """
+    last_time = pd.Timestamp(dataset[var_name].max().values)
+    end_date = pd.Timestamp(end_date)
+
+    new_times = []
+    years = 1
+    while (new_time := last_time + pd.DateOffset(years=years)) <= end_date:
+        new_times.append(new_time)
+        years += 1
+    if not new_times:
+        return dataset
+
+    last_step = dataset.sel({var_name: [last_time.to_datetime64()]})
+    new_steps = [last_step.assign_coords({var_name: [t]}) for t in new_times]
+    # variables without the time dimension are kept as they are
+    filled = xr.concat(
+        [dataset, *new_steps],
+        dim=var_name,
+        data_vars="minimal",
+        coords="minimal",
+        compat="override",
+        join="override",
+        combine_attrs="override",
+    )
+    filled[var_name].attrs = dataset[var_name].attrs
+    filled.attrs["time_fill"] = (
+        f"values of {last_time.year} repeated for "
+        f"{new_times[0].year}-{new_times[-1].year}"
+    )
+    return filled
+
+
 def truncate_data_by_time(
     dataset: xr.Dataset,
     start_date: str | np.datetime64,
     end_date: str | np.datetime64 | None = None,
     var_name: str = "time",
+    fill_to_end: bool = False,
 ) -> xr.Dataset:
     """Truncate data from a specific start date to an end date. Both dates are inclusive.
 
@@ -94,6 +146,10 @@ def truncate_data_by_time(
             Format as "YYYY-MM-DD" or as a numpy datetime64 object.
             If None, truncate until the last date in the dataset. Default is None.
         var_name (str): Name of the time variable in the dataset. Default is "time".
+        fill_to_end (bool): If True and the data end before the end date,
+            repeat the last time step once per year up to the end date,
+            e.g. to use the latest annual population data for later years.
+            Default is False.
 
     Returns:
         xr.Dataset: Dataset truncated from the specified start date.
@@ -115,7 +171,10 @@ def truncate_data_by_time(
             "The start date must be earlier than or equal to the end date."
         )
 
-    return dataset.sel({var_name: slice(start_date, end_date)})
+    truncated = dataset.sel({var_name: slice(start_date, end_date)})
+    if fill_to_end and truncated.sizes[var_name] > 0:
+        truncated = _fill_years_to_end_date(truncated, end_date, var_name)
+    return truncated
 
 
 def _check_month_start_data(times: xr.DataArray) -> bool:

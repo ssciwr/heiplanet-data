@@ -5,6 +5,7 @@ Building blocks (import directly for custom, notebook-style pipelines):
 * :mod:`heiplanet_data.converters` — unit and coordinate conversions
 * :mod:`heiplanet_data.regrid` — spatial resolution resampling
 * :mod:`heiplanet_data.temporal` — time-axis operations
+* :mod:`heiplanet_data.population` — population density from counts
 
 Orchestrated entry points (settings-driven, used by the CLI scripts):
 
@@ -41,6 +42,11 @@ from heiplanet_data.pipeline import (
     preprocess_data_file,
     register_step,
 )
+from heiplanet_data.population import (
+    calculate_grid_cell_area,
+    calculate_population_density,
+    load_grid_cell_area,
+)
 from heiplanet_data.regrid import (
     GridConfig,
     ResolutionConfig,
@@ -74,8 +80,11 @@ __all__ = [
     "adjust_longitude_360_to_180",
     "aggregate_data_by_nuts",
     "align_lon_lat_with_popu_data",
+    # population
+    "calculate_grid_cell_area",
     # temporal
     "calculate_monthly_precipitation",
+    "calculate_population_density",
     "check_agg_funcs",
     "check_downsample_condition",
     "convert_360_to_180",
@@ -86,6 +95,7 @@ __all__ = [
     "downsample_resolution_with_cdo",
     "downsample_resolution_with_xarray",
     "downsample_resolution_with_xesmf",
+    "load_grid_cell_area",
     "preprocess_data_file",
     "register_step",
     "rename_coords",
