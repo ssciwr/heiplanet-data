@@ -679,7 +679,7 @@ def test_extract_years_months_days_from_range():
 
 
 def test_download_sub_tp_data(tmp_path):
-    out_dir = tmp_path / "test_sub_tp"
+    out_dir = tmp_path / "test_sub_total_precipitation"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     start_date = "2025-03-30"
@@ -710,7 +710,7 @@ def test_download_sub_tp_data(tmp_path):
 
 
 def test_download_sub_tp_data_existing_file(tmp_path):
-    out_dir = tmp_path / "test_sub_tp_existing"
+    out_dir = tmp_path / "test_sub_total_precipitation_existing"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     start_date = "2025-03-30"
@@ -742,7 +742,7 @@ def test_download_sub_tp_data_existing_file(tmp_path):
 
 
 def test_download_total_precipitation_from_hourly_era5_land_invalid_dates(tmp_path):
-    out_dir = tmp_path / "test_download_tp_invalid"
+    out_dir = tmp_path / "test_download_total_precipitation_invalid"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     with pytest.raises(ValueError):
@@ -828,7 +828,7 @@ def test_download_total_precipitation_from_hourly_era5_land_same_year_month(
 def test_download_total_precipitation_from_hourly_era5_land_diff_year(
     tmp_path,
 ):
-    out_dir = tmp_path / "test_download_tp_diff_year"
+    out_dir = tmp_path / "test_download_total_precipitation_diff_year"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     start_date = "2024-12-30"
@@ -872,7 +872,7 @@ def test_download_total_precipitation_from_hourly_era5_land_diff_year(
 def test_download_total_precipitation_from_hourly_era5_land_truncate(
     tmp_path,
 ):
-    out_dir = tmp_path / "test_download_tp_truncate"
+    out_dir = tmp_path / "test_download_total_precipitation_truncate"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     start_date = "2024-10-15"
@@ -925,4 +925,27 @@ def test_download_total_precipitation_from_hourly_era5_land_existing_file(tmp_pa
     assert fname == str(existing_file)
 
     # check if the existing file is empty
+    assert existing_file.stat().st_size == 0
+
+
+def test_download_total_precipitation_from_hourly_era5_land_var_list(tmp_path):
+    # variable names are abbreviated in the file name, same as for other downloads
+    existing_file = (
+        tmp_path / "era5_data_2025-03-18-2025-03-19_midnight_tp_2t_daily_raw.nc"
+    )
+    existing_file.touch()  # create an empty file to skip the download
+
+    fname = inout.download_total_precipitation_from_hourly_era5_land(
+        start_date="2025-03-18",
+        end_date="2025-03-19",
+        area=None,
+        out_dir=tmp_path,
+        base_name="era5_data",
+        data_format="netcdf",
+        ds_name="reanalysis-era5-land",
+        coord_name="valid_time",
+        var_name=["total_precipitation", "2m_temperature"],
+    )
+
+    assert fname == str(existing_file)
     assert existing_file.stat().st_size == 0

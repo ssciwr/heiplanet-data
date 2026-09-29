@@ -651,10 +651,8 @@ def download_total_precipitation_from_hourly_era5_land(
     has_area = area is not None
     file_ext = _file_extension(data_format)
     area_str = _add_prefix_if_not_empty(_area_format(has_area))
-    if isinstance(var_name, list):
-        var_name_str = "_".join(var_name)
-    else:
-        var_name_str = var_name
+    var_list = [var_name] if isinstance(var_name, str) else var_name
+    var_name_str = _format_variables(var_list)
     file_name = f"{base_name}_{start_date}-{end_date}_midnight_{var_name_str}_daily{area_str}_raw"
     output_file_name = f"{file_name}.{file_ext}"
     output_file_path = out_dir / output_file_name

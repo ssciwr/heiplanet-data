@@ -162,6 +162,11 @@
             "default": "time",
             "description": "Variable name of the time values to truncate."
         },
+        "truncate_date_fill": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to fill annual data up to truncate_date_to by repeating the last available year, e.g. to use population data of 2021 for 2022-2024."
+        },
         "unify_coords": {
             "type": "boolean",
             "default": true,
@@ -205,6 +210,39 @@
             "type": "string",
             "default": "montp",
             "description": "Suffix of file names after calculating monthly total precipitation."
+        },
+        "cal_pop_density": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to calculate population density (persons per km2) as population count divided by grid-cell area. Density is added as a new variable '<name>-density'."
+        },
+        "cal_pop_density_vname": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "default": ["total-population"],
+            "description": "Variable names of the population counts to calculate density for."
+        },
+        "cal_pop_density_coords": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "default": ["latitude", "longitude"],
+            "description": "Names of the latitude and longitude coordinates used to compute grid-cell areas."
+        },
+        "cal_pop_density_area_file": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Optional NetCDF file with grid-cell areas (variable 'cell_area', in km2 or m2). If null, areas are computed from the grid assuming a spherical Earth (as CDO gridarea)."
+        },
+        "cal_pop_density_fname": {
+            "type": "string",
+            "default": "popdens",
+            "description": "Suffix of file names after calculating population density."
         }
     },
     "additionalProperties": false,
@@ -284,6 +322,17 @@
             },
             "then": {
                 "required": ["cal_monthly_tp_vname", "cal_monthly_tp_tcoord", "cal_monthly_tp_fname"]
+            }
+        },
+        {
+            "if": {
+                "required": ["cal_pop_density"],
+                "properties": {
+                    "cal_pop_density": { "const": true }
+                }
+            },
+            "then": {
+                "required": ["cal_pop_density_vname", "cal_pop_density_coords", "cal_pop_density_fname"]
             }
         }
     ]

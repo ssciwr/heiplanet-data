@@ -19,7 +19,8 @@ The `heiplanet_data` package is organized by pipeline stage:
 | [`inout`](reference/inout.md) | Download of raw data (bronze level) from data sources such as CDS/ERA5-Land and ISIMIP, and file handling. |
 | [`converters`](reference/converters.md) | Elementary transformations: longitude 0-360 to -180-180, Kelvin to Celsius, meters to millimeters, unification of coordinate names. |
 | [`regrid`](reference/regrid.md) | Spatial resolution resampling: downsampling via `xarray`, `xESMF`, or `CDO`, and upsampling via interpolation. Only module using the heavy `xesmf`/`cdo` dependencies. |
-| [`temporal`](reference/temporal.md) | Time-axis operations: shifting time points, truncating to a date range, monthly precipitation totals. |
+| [`temporal`](reference/temporal.md) | Time-axis operations: shifting time points, truncating to a date range (optionally filling later years with the last available year), monthly precipitation totals. |
+| [`population`](reference/population.md) | Population density: grid-cell area of regular lat-lon grids (spherical Earth, as CDO `gridarea`) and population count divided by cell area. |
 | [`pipeline`](reference/pipeline.md) | Settings-driven orchestration of the preprocessing steps (bronze to silver): step registry and the `preprocess_data_file` entry point. |
 | [`nuts_aggregation`](reference/nuts_aggregation.md) | Aggregation of preprocessed gridded data over NUTS regions via `exactextract` or `geopandas`: the `aggregate_data_by_nuts` entry point. |
 | [`utils`](reference/utils.md) | Shared helpers: settings loading and validation, file checks, unique tags. |

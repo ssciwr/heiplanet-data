@@ -33,7 +33,8 @@ jobs:
           conda init bash
           source ~/.bashrc
           conda activate test_env
-          conda install -y -c conda-forge esmf esmpy
+          # nompi build: MPI/UCX is not needed and fails on the runner network devices
+          conda install -y -c conda-forge "esmf=*=nompi*" esmpy
           conda install -y -c conda-forge python-cdo
           conda install -y -c conda-forge pip
         shell: bash -l {0}
