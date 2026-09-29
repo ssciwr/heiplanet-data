@@ -365,7 +365,10 @@ def test_suggest_filename_vars():
         "era5_land_data",
         ["2m_temperature", "total_precipitation"],
     )
-    assert file_name == "era5_land_data_2025_01-02_2t_tp_monthly_area_raw.nc"
+    assert (
+        file_name
+        == "era5_land_data_2025_01-02_2t_total_precipitation_monthly_area_raw.nc"
+    )
 
 
 def test_suggest_filename_long():
@@ -679,7 +682,7 @@ def test_extract_years_months_days_from_range():
 
 
 def test_download_sub_tp_data(tmp_path):
-    out_dir = tmp_path / "test_sub_tp"
+    out_dir = tmp_path / "test_sub_total_precipitation"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     start_date = "2025-03-30"
@@ -710,7 +713,7 @@ def test_download_sub_tp_data(tmp_path):
 
 
 def test_download_sub_tp_data_existing_file(tmp_path):
-    out_dir = tmp_path / "test_sub_tp_existing"
+    out_dir = tmp_path / "test_sub_total_precipitation_existing"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     start_date = "2025-03-30"
@@ -742,7 +745,7 @@ def test_download_sub_tp_data_existing_file(tmp_path):
 
 
 def test_download_total_precipitation_from_hourly_era5_land_invalid_dates(tmp_path):
-    out_dir = tmp_path / "test_download_tp_invalid"
+    out_dir = tmp_path / "test_download_total_precipitation_invalid"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     with pytest.raises(ValueError):
@@ -782,7 +785,9 @@ def test_download_total_precipitation_from_hourly_era5_land_same_year_month(
         var_name="total_precipitation",
         clean_tmp_files=False,  # keep temporary files for testing
     )
-    output_file_name = "era5_data_2025-03-15-2025-03-17_midnight_tp_daily_raw.nc"
+    output_file_name = (
+        "era5_data_2025-03-15-2025-03-17_midnight_total_precipitation_daily_raw.nc"
+    )
     output_file_path = out_dir / output_file_name
     assert output_file_path.exists()
     assert fname == str(output_file_path)
@@ -828,7 +833,7 @@ def test_download_total_precipitation_from_hourly_era5_land_same_year_month(
 def test_download_total_precipitation_from_hourly_era5_land_diff_year(
     tmp_path,
 ):
-    out_dir = tmp_path / "test_download_tp_diff_year"
+    out_dir = tmp_path / "test_download_total_precipitation_diff_year"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     start_date = "2024-12-30"
@@ -845,7 +850,9 @@ def test_download_total_precipitation_from_hourly_era5_land_diff_year(
         var_name="total_precipitation",
         clean_tmp_files=True,  # remove temporary files after merging
     )
-    output_file_name = "era5_data_2024-12-30-2025-01-02_midnight_tp_daily_area_raw.nc"
+    output_file_name = (
+        "era5_data_2024-12-30-2025-01-02_midnight_total_precipitation_daily_area_raw.nc"
+    )
     output_file_path = out_dir / output_file_name
     assert output_file_path.exists()
 
@@ -872,7 +879,7 @@ def test_download_total_precipitation_from_hourly_era5_land_diff_year(
 def test_download_total_precipitation_from_hourly_era5_land_truncate(
     tmp_path,
 ):
-    out_dir = tmp_path / "test_download_tp_truncate"
+    out_dir = tmp_path / "test_download_total_precipitation_truncate"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     start_date = "2024-10-15"
@@ -890,7 +897,9 @@ def test_download_total_precipitation_from_hourly_era5_land_truncate(
         clean_tmp_files=True,
     )
 
-    output_file_name = "era5_data_2024-10-15-2024-11-15_midnight_tp_daily_area_raw.nc"
+    output_file_name = (
+        "era5_data_2024-10-15-2024-11-15_midnight_total_precipitation_daily_area_raw.nc"
+    )
     output_file_path = out_dir / output_file_name
     assert fname == str(output_file_path)
     assert output_file_path.exists()
@@ -907,7 +916,8 @@ def test_download_total_precipitation_from_hourly_era5_land_truncate(
 
 def test_download_total_precipitation_from_hourly_era5_land_existing_file(tmp_path):
     existing_file = (
-        tmp_path / "era5_data_2025-03-18-2025-03-19_midnight_tp_daily_raw.nc"
+        tmp_path
+        / "era5_data_2025-03-18-2025-03-19_midnight_total_precipitation_daily_raw.nc"
     )
     existing_file.touch()  # create an empty file
 
