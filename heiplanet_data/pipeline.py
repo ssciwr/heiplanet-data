@@ -482,6 +482,13 @@ def preprocess_data_file(
         dataset, file_name_base = _apply_preprocessing(dataset, file_name, settings)
         # save the processed dataset
         output_file = folder_path / f"{file_name_base}_{unique_tag}{file_ext}"
-        dataset.to_netcdf(output_file, mode="w", format="NETCDF4")
+        # compress numeric variables, otherwise large datasets (e.g. daily
+        # ERA5-Land) can take several GB on disk
+        encoding = {
+            var: {"zlib": True, "complevel": 4}
+            for var in dataset.data_vars
+            if np.issubdtype(dataset[var].dtype, np.number)
+        }
+        dataset.to_netcdf(output_file, mode="w", format="NETCDF4", encoding=encoding)
         logger.info(f"Processed dataset saved to: {output_file}")
         return dataset, str(output_file.name)

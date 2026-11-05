@@ -367,6 +367,46 @@ def test_load_settings_new_settings(tmp_path, tmpdir):
     assert settings.get("adjust_longitude") is True
 
 
+def test_load_script_config_resolves_relative_settings(tmp_path, monkeypatch):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    config_path = config_dir / "script_config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "datasets": {
+                    "relative": {"preprocess_settings": "settings.json"},
+                    "absolute": {"preprocess_settings": "/abs/settings.json"},
+                    "default": {"preprocess_settings": "default"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # the result must not depend on the working directory
+    monkeypatch.chdir(tmp_path)
+    datasets = utils.load_script_config(config_path)["datasets"]
+
+    assert datasets["relative"]["preprocess_settings"] == str(
+        config_dir / "settings.json"
+    )
+    assert datasets["absolute"]["preprocess_settings"] == "/abs/settings.json"
+    assert datasets["default"]["preprocess_settings"] == "default"
+
+
+def test_production_config_uses_valid_production_settings():
+    production_dir = utils.pkg / "production"
+    config = utils.load_script_config(production_dir / "script_config.json")
+
+    for name, dataset in config["datasets"].items():
+        setting_path = Path(dataset["preprocess_settings"])
+        assert setting_path.parent == production_dir, name
+        # a missing or invalid file would silently fall back to the defaults
+        settings = json.loads(setting_path.read_text(encoding="utf-8"))
+        assert utils.is_valid_settings(settings), name
+
+
 def test_generate_unique_tag():
     unique_tag = utils.generate_unique_tag()
     assert isinstance(unique_tag, str)

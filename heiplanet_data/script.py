@@ -1,3 +1,4 @@
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -91,6 +92,9 @@ def _run_era5_daily(
             data_format=data_format,
             ds_name=era5_daily_config["dataset"],
             var_name=era5_daily_config.get("variable", "total_precipitation"),
+            # the per-range download chunks are merged into the raw file,
+            # keeping them doubles the disk usage
+            clean_tmp_files=era5_daily_config.get("clean_tmp_files", True),
         )
     )
 
@@ -107,8 +111,6 @@ def _run_era5_daily(
         new_settings={
             "output_dir": str(data_folder_out),
             "cal_monthly_tp": False,
-            "resample_grid": True,
-            "resample_grid_vname": ["latitude", "longitude"],
         },
         unique_tag=era5_daily_config["unique_tag"],
     )
@@ -199,4 +201,6 @@ def main(config: dict[str, Any] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # e.g. `python script.py production/script_config.json` for the production
+    # run; without an argument, the packaged default config is used
+    main(utils.load_script_config(sys.argv[1]) if len(sys.argv) > 1 else None)
