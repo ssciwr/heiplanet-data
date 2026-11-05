@@ -158,3 +158,100 @@ def test_calculate_population_density_invalid(get_popu_dataset):
     area = population.calculate_grid_cell_area(get_popu_dataset)
     with pytest.raises(ValueError):
         population.calculate_population_density(get_popu_dataset, ["popu"], area)
+
+
+@pytest.fixture
+def get_density_dataset(get_popu_dataset):
+    area = population.calculate_grid_cell_area(get_popu_dataset)
+    return population.calculate_population_density(
+        get_popu_dataset, ["total-population"], area
+    )
+
+
+def test_map_density_to_grid(get_density_dataset):
+    # 5 degree grid laid out as ERA5-Land: includes the poles, lon up to 180
+    target_lat = np.arange(90.0, -90.1, -5.0)
+    target_lon = np.arange(-175.0, 180.1, 5.0)
+    name = "total-population-density"
+
+    result = population.map_density_to_grid(
+        get_density_dataset, [name], target_lat, target_lon
+    )
+
+    assert list(result.data_vars) == [name]
+    assert result[name].dims == ("time", "latitude", "longitude")
+    assert result[name].attrs["units"] == "km-2"
+    np.testing.assert_array_equal(result.latitude.values, target_lat)
+    np.testing.assert_array_equal(result.longitude.values, target_lon)
+
+    source = get_density_dataset[name]
+    # a point inside a cell takes its value, one on an edge the next cell's
+    np.testing.assert_array_equal(
+        result[name].sel(latitude=-5.0, longitude=-175.0).values,
+        source.sel(latitude=-5.0, longitude=-175.0).values,
+    )
+    np.testing.assert_array_equal(
+        result[name].sel(latitude=0.0, longitude=-5.0).values,
+        source.sel(latitude=-5.0, longitude=-5.0).values,
+    )
+    # the poles belong to the outermost cells, lon = 180 wraps to the first
+    np.testing.assert_array_equal(
+        result[name].sel(latitude=-90.0, longitude=-175.0).values,
+        source.sel(latitude=-85.0, longitude=-175.0).values,
+    )
+    np.testing.assert_array_equal(
+        result[name].sel(latitude=-85.0, longitude=180.0).values,
+        source.sel(latitude=-85.0, longitude=-175.0).values,
+    )
+
+
+def test_map_density_to_grid_keeps_population(get_density_dataset):
+    # cell-center target grid, so that the cell areas cover the sphere exactly
+    target_lat = np.arange(87.5, -90.0, -5.0)
+    target_lon = np.arange(-177.5, 180.0, 5.0)
+    name = "total-population-density"
+
+    result = population.map_density_to_grid(
+        get_density_dataset, [name], target_lat, target_lon
+    )
+
+    area = population.calculate_grid_cell_area(result)
+    total = (result[name] * area).sum(("latitude", "longitude"))
+    expected = get_density_dataset["total-population"].sum(("latitude", "longitude"))
+    np.testing.assert_allclose(total, expected, rtol=1e-5)
+
+
+def test_map_density_to_grid_ascending_latitude(get_density_dataset):
+    ascending = get_density_dataset.sortby("latitude")
+    target_lat = np.arange(-87.5, 90.0, 5.0)
+    target_lon = np.arange(-177.5, 180.0, 5.0)
+    name = "total-population-density"
+
+    result = population.map_density_to_grid(ascending, [name], target_lat, target_lon)
+
+    np.testing.assert_array_equal(
+        result[name].sel(latitude=-87.5, longitude=-177.5).values,
+        ascending[name].sel(latitude=-85.0, longitude=-175.0).values,
+    )
+
+
+def test_map_density_to_grid_invalid(get_density_dataset):
+    name = "total-population-density"
+    fine_lat = np.arange(87.5, -90.0, -5.0)
+    fine_lon = np.arange(-177.5, 180.0, 5.0)
+
+    with pytest.raises(ValueError, match="not found"):
+        population.map_density_to_grid(
+            get_density_dataset, ["missing"], fine_lat, fine_lon
+        )
+
+    # same or coarser grid
+    with pytest.raises(ValueError, match="finer"):
+        population.map_density_to_grid(
+            get_density_dataset, [name], fine_lat, np.arange(-175.0, 180.0, 10.0)
+        )
+
+    # target outside of a regional source grid
+    regional = get_density_dataset.sel(longitude=slice(-55.0, 55.0))
+    with pytest.raises(ValueError, match="extent"):
+        population.map_density_to_grid(regional, [name], fine_lat, fine_lon)

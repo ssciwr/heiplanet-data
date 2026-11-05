@@ -37,6 +37,7 @@ from heiplanet_data.population import (
     calculate_grid_cell_area,
     calculate_population_density,
     load_grid_cell_area,
+    map_density_to_grid,
 )
 from heiplanet_data.regrid import (
     GridConfig,
@@ -333,6 +334,37 @@ def _step_cal_pop_density(
         area = calculate_grid_cell_area(ds, lat_name=lat_name, lon_name=lon_name)
     ds = calculate_population_density(ds, var_names=vnames, area=area)
     fname_base += f"_{s.get('cal_pop_density_fname')}"
+    return ds, fname_base
+
+
+@register_step("regrid_pop_density", order=80)
+def _step_regrid_pop_density(
+    ds: xr.Dataset, fname_base: str, s: dict[str, Any], logger: logging.Logger
+) -> tuple[xr.Dataset, str]:
+    """Map population density onto the grid of another file, e.g. ERA5-Land.
+
+    This must run after ``cal_pop_density``: population counts cannot be
+    interpolated to a finer grid, as each cell would keep the count of the
+    coarse cell. The target grid is read from a file since computed
+    coordinates would not match e.g. ERA5-Land exactly.
+    """
+    if not s.get("regrid_pop_density", False):
+        return ds, fname_base
+
+    vnames = s.get("regrid_pop_density_vname") or []
+    lat_name, lon_name = s.get("cal_pop_density_coords", ["latitude", "longitude"])
+    grid_file = s.get("regrid_pop_density_grid_file")
+    if not utils.is_non_empty_file(Path(grid_file)):
+        raise ValueError(f"Target grid file {grid_file} does not exist or is empty.")
+
+    logger.info(f"Mapping population density onto the grid of {grid_file}...")
+    with xr.open_dataset(grid_file) as grid:
+        target_lat = grid[lat_name].values
+        target_lon = grid[lon_name].values
+    ds = map_density_to_grid(
+        ds, vnames, target_lat, target_lon, lat_name=lat_name, lon_name=lon_name
+    )
+    fname_base += f"_{s.get('regrid_pop_density_fname')}"
     return ds, fname_base
 
 

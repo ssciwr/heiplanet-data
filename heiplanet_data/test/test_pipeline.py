@@ -667,6 +667,58 @@ def test_apply_preprocessing_wind_height_unchanged():
     assert np.array_equal(preprocessed_dataset["new_height"].values, org_height)
 
 
+def test_regrid_pop_density_step(tmp_path, get_dataset):
+    grid_file = tmp_path / "grid.nc"
+    xr.Dataset(
+        coords={
+            "latitude": np.arange(89.75, -90.0, -0.5),
+            "longitude": np.arange(-179.75, 180.0, 0.5),
+        }
+    ).to_netcdf(grid_file)
+
+    global_ds = xr.Dataset(
+        {
+            "total-population": (
+                ("latitude", "longitude"),
+                np.full((18, 36), 1000.0),
+            )
+        },
+        coords={
+            "latitude": np.arange(85.0, -90.0, -10.0),
+            "longitude": np.arange(-175.0, 180.0, 10.0),
+        },
+    )
+    settings = {
+        "cal_pop_density": True,
+        "cal_pop_density_vname": ["total-population"],
+        "cal_pop_density_coords": ["latitude", "longitude"],
+        "cal_pop_density_fname": "popdens",
+        "regrid_pop_density": True,
+        "regrid_pop_density_vname": ["total-population-density"],
+        "regrid_pop_density_grid_file": str(grid_file),
+        "regrid_pop_density_fname": "01deg",
+    }
+    assert utils.is_valid_settings(settings)
+
+    result, fname = pipeline._apply_preprocessing(global_ds, "pop", settings=settings)
+
+    # runs after cal_pop_density, and the counts are not on the new grid
+    assert fname == "pop_popdens_01deg"
+    assert list(result.data_vars) == ["total-population-density"]
+    assert result.sizes == {"latitude": 360, "longitude": 720}
+
+    # fail instead of keeping the source grid
+    settings["regrid_pop_density_grid_file"] = str(tmp_path / "missing.nc")
+    with pytest.raises(ValueError, match="does not exist"):
+        pipeline._apply_preprocessing(global_ds, "pop", settings=settings)
+
+    # disabled
+    settings["regrid_pop_density"] = False
+    result, fname = pipeline._apply_preprocessing(global_ds, "pop", settings=settings)
+    assert fname == "pop_popdens"
+    assert "total-population" in result.data_vars
+
+
 def test_registered_steps_have_schema_entries():
     """Guard the registry<->schema link in both directions.
 
