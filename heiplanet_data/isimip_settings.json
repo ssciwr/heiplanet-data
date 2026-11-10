@@ -20,5 +20,11 @@
         "longitude"
     ],
     "cal_pop_density_area_file": null,
-    "cal_pop_density_fname": "popdens"
+    "cal_pop_density_fname": "popdens",
+    "regrid_pop_density": false,
+    "regrid_pop_density_vname": [
+        "total-population-density"
+    ],
+    "regrid_pop_density_grid_file": null,
+    "regrid_pop_density_fname": "01deg"
 }

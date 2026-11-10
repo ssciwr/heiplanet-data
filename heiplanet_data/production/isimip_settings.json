@@ -1,0 +1,30 @@
+{
+    "output_dir": "processed",
+    "truncate_date": true,
+    "truncate_date_from": "2014-01-01",
+    "truncate_date_to": "2018-12-31",
+    "truncate_date_vname": "time",
+    "truncate_date_fill": false,
+    "unify_coords": true,
+    "unify_coords_fname": "unicoords",
+    "uni_coords": {
+        "lat": "latitude",
+        "lon": "longitude"
+    },
+    "cal_pop_density": true,
+    "cal_pop_density_vname": [
+        "total-population"
+    ],
+    "cal_pop_density_coords": [
+        "latitude",
+        "longitude"
+    ],
+    "cal_pop_density_area_file": null,
+    "cal_pop_density_fname": "popdens",
+    "regrid_pop_density": true,
+    "regrid_pop_density_vname": [
+        "total-population-density"
+    ],
+    "regrid_pop_density_grid_file": ".data_heiplanet_db/silver/era5_data_2014-2018_allm_2t_monthly_unicoords_adjlon_celsius_silver.nc",
+    "regrid_pop_density_fname": "01deg"
+}

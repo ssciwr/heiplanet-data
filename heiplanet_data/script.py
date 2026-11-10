@@ -1,8 +1,11 @@
+import argparse
 import time
 from pathlib import Path
 from typing import Any
 
-from heiplanet_data import preprocess_data_file, utils
+import pooch
+
+from heiplanet_data import aggregate_data_by_nuts, preprocess_data_file, utils
 from heiplanet_data.inout import (
     download_data,
     download_isimip_data,
@@ -91,6 +94,9 @@ def _run_era5_daily(
             data_format=data_format,
             ds_name=era5_daily_config["dataset"],
             var_name=era5_daily_config.get("variable", "total_precipitation"),
+            # the per-range download chunks are merged into the raw file,
+            # keeping them doubles the disk usage
+            clean_tmp_files=era5_daily_config.get("clean_tmp_files", True),
         )
     )
 
@@ -107,8 +113,6 @@ def _run_era5_daily(
         new_settings={
             "output_dir": str(data_folder_out),
             "cal_monthly_tp": False,
-            "resample_grid": True,
-            "resample_grid_vname": ["latitude", "longitude"],
         },
         unique_tag=era5_daily_config["unique_tag"],
     )
@@ -154,9 +158,73 @@ def _run_isimip(
     print(f"Name of preprocessed file: {isimip_pfname}")
 
 
-def main(config: dict[str, Any] | None = None) -> None:
+def _run_nuts_aggregation(nuts_config: dict[str, Any], data_folder: Path) -> Path:
+    """Aggregate gold model output (e.g. J-Model, P-Model) over NUTS regions.
+
+    The NUTS shape file is downloaded to `data_folder` with `pooch`, unless it
+    is already there with the expected hash. All datasets are aggregated into
+    a single NetCDF file indexed by "NUTS_ID" and "time".
+
+    Args:
+        nuts_config (Dict[str, Any]): The `nuts_aggregation` block of the
+            script config, with keys `data_folder` (folder of the gold model
+            output), `data_folder_out`, `nuts_file`, `nuts_url`, `nuts_hash`,
+            optionally `normalize_time`, and `datasets`: a mapping of dataset
+            name to `{"file": <file name in data_folder>, "agg": {<var>: <func>}}`.
+            Only the variables listed in `agg` are aggregated; `agg: null`
+            aggregates all variables with the mean.
+        data_folder (Path): Folder raw data, here the NUTS shape file, is
+            downloaded to.
+
+    Returns:
+        Path: Path to the aggregated NetCDF file.
+    """
+    nuts_file = Path(
+        pooch.retrieve(
+            url=nuts_config["nuts_url"],
+            known_hash=nuts_config["nuts_hash"],
+            fname=nuts_config["nuts_file"],
+            path=data_folder,
+        )
+    )
+
+    gold_folder = Path(nuts_config["data_folder"])
+    netcdf_files = {
+        name: (gold_folder / ds["file"], ds.get("agg"))
+        for name, ds in nuts_config["datasets"].items()
+    }
+    missing = [str(f) for f, _ in netcdf_files.values() if not f.is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"Input files for NUTS aggregation not found: {missing}. "
+            f"These are produced by heiplanet-models; check `data_folder` "
+            f"in the `nuts_aggregation` config (relative to the working directory)."
+        )
+
+    data_folder_out = Path(nuts_config["data_folder_out"])
+    data_folder_out.mkdir(parents=True, exist_ok=True)
+
+    print(f"Aggregating {list(netcdf_files)} over NUTS regions from {nuts_file}")
+    t0 = time.time()
+    out_file = aggregate_data_by_nuts(
+        netcdf_files,
+        nuts_file,
+        normalize_time=nuts_config.get("normalize_time", True),
+        output_dir=data_folder_out,
+    )
+    print(f"NUTS aggregation completed in {time.time() - t0:.2f} seconds.")
+    print(f"Name of aggregated file: {out_file}")
+    return out_file
+
+
+STEPS = ("era5", "era5_daily", "isimip", "nuts_aggregation")
+
+
+def main(config: dict[str, Any] | None = None, steps: list[str] | None = None) -> None:
     """Download and preprocess the datasets enabled in `config["datasets"]`
-    (ERA5-Land monthly and daily, and/or ISIMIP population data).
+    (ERA5-Land monthly and daily, and/or ISIMIP population data), and
+    aggregate gold model output over NUTS regions if `config["nuts_aggregation"]`
+    is enabled.
 
     Each entry under `config["datasets"]` (currently "era5", "era5_daily"
     and "isimip") shares a common shape: `enabled`, `source`, `base_name`,
@@ -165,13 +233,31 @@ def main(config: dict[str, Any] | None = None) -> None:
     `end_date` for era5_daily, `search_path`/`file_match` for isimip). Set
     `enabled` to `false` (or omit the entry) to skip a dataset.
 
+    The NUTS aggregation runs last, as it needs the gold output of
+    heiplanet-models, which in turn needs the silver data from the steps
+    before. Use `steps` to run only some steps, e.g. only
+    `["nuts_aggregation"]` once the models have run.
+
     Args:
         config (Dict[str, Any] | None): User-configurable variables, in the
             shape of `script_config.json`. Defaults to None, which loads the
             packaged `script_config.json` (see `utils.load_script_config`).
+        steps (list[str] | None): Steps to run, from `STEPS`. Steps not listed
+            are skipped even if enabled in the config. Defaults to None, which
+            runs all steps enabled in the config.
     """
     if config is None:
         config = utils.load_script_config()
+
+    if steps is not None:
+        unknown = set(steps) - set(STEPS)
+        if unknown:
+            raise ValueError(f"Unknown steps {sorted(unknown)}; choose from {STEPS}.")
+
+    def _selected(name: str, step_config: dict[str, Any] | None) -> bool:
+        if steps is not None and name not in steps:
+            return False
+        return bool(step_config) and step_config.get("enabled", True)
 
     data_format = config["data_format"]
     data_folder = Path(config["data_folder"])
@@ -180,23 +266,53 @@ def main(config: dict[str, Any] | None = None) -> None:
     datasets = config["datasets"]
 
     era5_config = datasets.get("era5")
-    if era5_config and era5_config.get("enabled", True):
+    if _selected("era5", era5_config):
         _run_era5(era5_config, data_format, data_folder, data_folder_out)
     else:
         print("Skipping ERA5-Land dataset (disabled in config).")
 
     era5_daily_config = datasets.get("era5_daily")
-    if era5_daily_config and era5_daily_config.get("enabled", True):
+    if _selected("era5_daily", era5_daily_config):
         _run_era5_daily(era5_daily_config, data_format, data_folder, data_folder_out)
     else:
         print("Skipping ERA5-Land daily dataset (disabled in config).")
 
     isimip_config = datasets.get("isimip")
-    if isimip_config and isimip_config.get("enabled", True):
+    if _selected("isimip", isimip_config):
         _run_isimip(isimip_config, data_folder, data_folder_out)
     else:
         print("Skipping ISIMIP dataset (disabled in config).")
 
+    nuts_config = config.get("nuts_aggregation")
+    if _selected("nuts_aggregation", nuts_config):
+        _run_nuts_aggregation(nuts_config, data_folder)
+    else:
+        print("Skipping NUTS aggregation (disabled in config).")
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Download and preprocess data, and aggregate model output "
+        "over NUTS regions."
+    )
+    parser.add_argument(
+        "config",
+        nargs="?",
+        default="default",
+        help="Path to the script config; the packaged default config if omitted.",
+    )
+    parser.add_argument(
+        "--steps",
+        nargs="+",
+        choices=STEPS,
+        help="Run only these steps (default: all steps enabled in the config).",
+    )
+    return parser.parse_args(argv)
+
 
 if __name__ == "__main__":
-    main()
+    # e.g. `python script.py production/script_config.json` for the production
+    # run, or `... --steps nuts_aggregation` once heiplanet-models has run;
+    # without a config argument, the packaged default config is used
+    args = _parse_args()
+    main(utils.load_script_config(args.config), steps=args.steps)

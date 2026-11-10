@@ -36,6 +36,7 @@ dependencies = [
   "rioxarray",
   "jsonschema",
   "huggingface-hub",
+  "pooch",
 ]
 
 [project.optional-dependencies]

@@ -102,7 +102,7 @@ def test_main_downloads_and_preprocesses_era5_and_isimip(script_config, tmp_path
 
     # ERA5-Land daily raw data was downloaded
     era5_daily_files = list(data_folder.glob(f"{era5_daily_config['base_name']}*.nc"))
-    assert len(era5_daily_files) == 2
+    assert len(era5_daily_files) == 1
     era5_daily_mtime = era5_daily_files[0].stat().st_mtime
 
     # ISIMIP population data was downloaded alongside the ERA5-Land data
