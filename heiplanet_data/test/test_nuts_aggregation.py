@@ -280,6 +280,28 @@ def test_aggregate_netcdf_nuts_ee_3_data_vars(tmp_path, get_dataset, get_nuts_da
     )
 
 
+def test_check_dim_order(get_dataset):
+    # correct order passes
+    nuts_aggregation._check_dim_order(get_dataset, ["t2m", "tp"], Path("f.nc"))
+
+    # (longitude, latitude) order raises, naming file and variable
+    transposed = get_dataset.transpose("longitude", "latitude", "time")
+    with pytest.raises(
+        ValueError, match=r"'t2m' in 'f\.nc'.*\('latitude', 'longitude'\)"
+    ):
+        nuts_aggregation._check_dim_order(transposed, ["t2m"], Path("f.nc"))
+
+
+def test_aggregate_netcdf_nuts_ee_wrong_dim_order(tmp_path, get_dataset, get_nuts_data):
+    file_path = tmp_path / "test_data.nc"
+    get_dataset.transpose("longitude", "latitude", "time").to_netcdf(file_path)
+
+    with pytest.raises(ValueError, match="last two dimensions"):
+        nuts_aggregation._aggregate_netcdf_nuts_ee(
+            get_nuts_data, file_path, agg_dict=None, normalize_time=False
+        )
+
+
 def test_check_aggregation_inputs_invalid(tmp_path):
     # non dict
     with pytest.raises(ValueError):
