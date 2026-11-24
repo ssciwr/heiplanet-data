@@ -9,7 +9,9 @@ This module turns population counts per grid cell (e.g. ISIMIP
 * grid-cell area loaded from a precomputed NetCDF file
   (`load_grid_cell_area`),
 * population density as count divided by cell area
-  (`calculate_population_density`).
+  (`calculate_population_density`),
+* population density mapped onto a finer grid
+  (`map_density_to_grid`).
 """
 
 from pathlib import Path
@@ -191,3 +193,88 @@ def calculate_population_density(
         dataset[f"{name}{DENSITY_SUFFIX}"] = density.transpose(*count.dims)
 
     return dataset
+
+
+def _containing_cell_index(
+    source: xr.DataArray, target: np.ndarray, wrap: bool = False
+) -> np.ndarray:
+    """Return, for each target point, the index of the source cell containing it.
+
+    Source coordinates are cell centers. A target point on the edge between
+    two cells belongs to the cell further along the source coordinate, so
+    that every source cell receives the same number of regular target points.
+
+    Args:
+        source (xr.DataArray): Regular 1D source coordinate (cell centers).
+        target (np.ndarray): Target coordinate values.
+        wrap (bool): Wrap around if the source spans the full 360 degrees,
+            for longitudes. Default is False.
+
+    Returns:
+        np.ndarray: Index into `source` for each target point.
+    """
+    values = source.values.astype(np.float64)
+    step = _grid_spacing(source) * np.sign(values[1] - values[0])
+    first_edge = values[0] - step / 2
+    # round to avoid float noise for points exactly on a cell edge
+    index = np.floor(np.round((target - first_edge) / step, 6)).astype(int)
+
+    if wrap and np.isclose(source.size * abs(step), 360.0):
+        index = index % source.size
+    index[index == source.size] = source.size - 1  # on the outer edge, e.g. a pole
+
+    if (index < 0).any() or (index >= source.size).any():
+        raise ValueError(f"Target grid exceeds the extent of '{source.name}'.")
+    return index
+
+
+def map_density_to_grid(
+    dataset: xr.Dataset,
+    var_names: list[str],
+    target_lat: np.ndarray,
+    target_lon: np.ndarray,
+    lat_name: str = "latitude",
+    lon_name: str = "longitude",
+) -> xr.Dataset:
+    """Map density variables onto a finer regular lat-lon grid.
+
+    Each target point takes the value of the source cell containing it.
+    This piecewise-constant mapping is area-conservative for a density, so
+    density x cell area still sums to the population of the source grid.
+    Do not use it on counts, which must be split between the target cells.
+
+    Args:
+        dataset (xr.Dataset): Dataset with the density variables.
+        var_names (list[str]): Names of the density variables to map.
+        target_lat (np.ndarray): Latitudes of the target grid.
+        target_lon (np.ndarray): Longitudes of the target grid.
+        lat_name (str): Name of the latitude coordinate. Default is "latitude".
+        lon_name (str): Name of the longitude coordinate. Default is "longitude".
+
+    Returns:
+        xr.Dataset: Dataset on the target grid with only `var_names`, as
+            all other variables are still on the source grid.
+    """
+    missing = [name for name in var_names if name not in dataset.data_vars]
+    if missing:
+        raise ValueError(f"Variables {missing} not found in the dataset.")
+
+    source_lat, source_lon = dataset[lat_name], dataset[lon_name]
+    if np.abs(np.diff(target_lon)).max() >= _grid_spacing(source_lon):
+        raise ValueError("Target grid must be finer than the source grid.")
+
+    result = dataset[var_names].isel(
+        {
+            lat_name: xr.DataArray(
+                _containing_cell_index(source_lat, target_lat), dims=lat_name
+            ),
+            lon_name: xr.DataArray(
+                _containing_cell_index(source_lon, target_lon, wrap=True),
+                dims=lon_name,
+            ),
+        }
+    )
+    result = result.assign_coords({lat_name: target_lat, lon_name: target_lon})
+    result[lat_name].attrs = source_lat.attrs.copy()
+    result[lon_name].attrs = source_lon.attrs.copy()
+    return result
