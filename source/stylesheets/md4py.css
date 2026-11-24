@@ -1,0 +1,9 @@
+/*customized module heading*/
+.moduleh1 {
+    display: none !important;
+}
+
+/*generated module heading*/
+h2.doc.doc-heading {
+    font-size: 2em !important;
+}
