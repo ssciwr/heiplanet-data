@@ -1,9 +1,9 @@
 pre-commit
 pytest
-mkdocs-material==9.8.0
+mkdocs-material==9.8.2
 mkdocs-include-markdown-plugin==7.3.2
 mkdocs-glightbox==0.5.3
-mkdocstrings-python==2.0.10
+mkdocstrings-python==2.0.11
 mkdocs-jupyter==0.25.1
 mkdocs-gen-files==0.6.1
 mkdocs-literate-nav==0.6.3

@@ -193,6 +193,11 @@ def load_script_config(config_path: Path | str = "default") -> dict[str, Any]:
     If config_path is "default", load the packaged `script_config.json`.
     Otherwise, read the config from the given file path.
 
+    Relative `preprocess_settings` paths are resolved against the folder of
+    the config file, not the working directory: `load_settings` falls back
+    to the default settings for a file it cannot find, so a path that only
+    works from one directory would silently change the processed data.
+
     Args:
         config_path (Path | str): Path to the config file, or "default"
             to use the packaged default config. Defaults to "default".
@@ -208,7 +213,14 @@ def load_script_config(config_path: Path | str = "default") -> dict[str, Any]:
         raise ValueError(f"Script config file {config_file} not found or is empty.")
 
     with open(config_file, "r", encoding="utf-8") as f:
-        return json.load(f)
+        config = json.load(f)
+
+    for dataset in config.get("datasets", {}).values():
+        settings = dataset.get("preprocess_settings", "default")
+        if settings != "default":
+            dataset["preprocess_settings"] = str(config_file.parent / settings)
+
+    return config
 
 
 def generate_unique_tag() -> str:

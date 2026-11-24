@@ -84,6 +84,29 @@ def _prepare_for_aggregation(
     return dataset, agg_dict
 
 
+def _check_dim_order(dataset: xr.Dataset, var_names: list[str], nc_file: Path):
+    """Raise if a data variable is not laid out as (..., latitude, longitude).
+
+    `exactextract` requires the two trailing dimensions to be
+    ``("latitude", "longitude")``. Checking up front gives a clear error
+    naming the file and variable instead of failing inside the time loop.
+
+    Args:
+        dataset (xr.Dataset): Dataset to check.
+        var_names (list[str]): Names of the data variables to check.
+        nc_file (Path): Path of the file, used in the error message.
+    """
+    for var in var_names:
+        dims = dataset[var].dims
+        if dims[-2:] != ("latitude", "longitude"):
+            raise ValueError(
+                f"Data variable '{var}' in '{nc_file}' has dimensions {dims}, "
+                f"but the last two dimensions must be ('latitude', 'longitude'). "
+                f"Transpose the data, e.g. "
+                f"`ds.transpose('time', 'latitude', 'longitude')`, before aggregation."
+            )
+
+
 def _aggregate_netcdf_nuts_gpd(
     nuts_data: gpd.GeoDataFrame,
     nc_file: Path,
@@ -214,6 +237,7 @@ def _aggregate_netcdf_nuts_ee(
         # prepare dataset for aggregation
         dataset, agg_dict = _prepare_for_aggregation(dataset, normalize_time, agg_dict)
         r_var_names = list(agg_dict.keys())
+        _check_dim_order(dataset, r_var_names, nc_file)
 
         # aggregate data for each time step
         data_agg_list = []

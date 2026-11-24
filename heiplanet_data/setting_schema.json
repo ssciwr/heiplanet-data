@@ -243,6 +243,29 @@
             "type": "string",
             "default": "popdens",
             "description": "Suffix of file names after calculating population density."
+        },
+        "regrid_pop_density": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to map population density onto the grid of another file. Each target point takes the density of the source cell containing it. The output then only holds the mapped variables, as all others stay on the source grid."
+        },
+        "regrid_pop_density_vname": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "default": ["total-population-density"],
+            "description": "Names of the density variables to map onto the target grid."
+        },
+        "regrid_pop_density_grid_file": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "NetCDF file providing the target grid, e.g. a preprocessed ERA5-Land file. Its coordinates must use the names in cal_pop_density_coords. A relative path is resolved against the working directory."
+        },
+        "regrid_pop_density_fname": {
+            "type": "string",
+            "default": "01deg",
+            "description": "Suffix of file names after mapping population density onto the target grid."
         }
     },
     "additionalProperties": false,
@@ -333,6 +356,17 @@
             },
             "then": {
                 "required": ["cal_pop_density_vname", "cal_pop_density_coords", "cal_pop_density_fname"]
+            }
+        },
+        {
+            "if": {
+                "required": ["regrid_pop_density"],
+                "properties": {
+                    "regrid_pop_density": { "const": true }
+                }
+            },
+            "then": {
+                "required": ["regrid_pop_density_vname", "regrid_pop_density_grid_file", "regrid_pop_density_fname"]
             }
         }
     ]
